@@ -1,1118 +1,1516 @@
-// ==========================================
-// 1. GLOBAL STATE & CONFIGURATION
-// ==========================================
-let savedVouchersList = [];
-let currentAgencySettings = safeGetLocalStorage('tvg_agency_settings', {
-  agencyName: 'Saudi Pak Group of Travels',
-  phone: '',
-  email: '',
-  address: '',
-  logoUrl: ''
+// ==============================================================================
+// FILE: app.js
+// CHUNK: 1 / 5 (Core Setup, Security Configuration, Utility Functions & Auth Middleware)
+// ==============================================================================
+
+const express = require('express');
+const cors = require('cors');
+const morgan = require('morgan');
+const helmet = require('helmet');
+const compression = require('compression');
+const rateLimit = require('express-rate-limit');
+const path = require('path');
+const dotenv = require('dotenv');
+const { createClient } = require('@supabase/supabase-js');
+const jwt = require('jsonwebtoken');
+const bcrypt = require('bcryptjs');
+const crypto = require('crypto');
+const fs = require('fs');
+
+// ------------------------------------------------------------------------------
+// 1. ENVIRONMENT CONFIGURATION & SETUP
+// ------------------------------------------------------------------------------
+dotenv.config();
+
+const app = express();
+const PORT = process.env.PORT || 5000;
+const HOST = process.env.HOST || '0.0.0.0';
+const NODE_ENV = process.env.NODE_ENV || 'development';
+const JWT_SECRET = process.env.JWT_SECRET || 'app_super_secure_jwt_secret_key_2026_prod';
+const JWT_EXPIRES_IN = process.env.JWT_EXPIRES_IN || '7d';
+
+// Ensure required public and uploads directories exist
+const UPLOAD_DIR = path.join(__dirname, 'uploads');
+const PDF_TEMP_DIR = path.join(__dirname, 'temp_pdfs');
+const PUBLIC_DIR = path.join(__dirname, 'public');
+
+[UPLOAD_DIR, PDF_TEMP_DIR, PUBLIC_DIR].forEach((dir) => {
+  if (!fs.existsSync(dir)) {
+    fs.mkdirSync(dir, { recursive: true });
+    console.log(`[SYSTEM INIT] Created Directory: ${dir}`);
+  }
 });
 
-// Flatpickr Instances
-let voucherDatePicker = null;
-let transportDatePicker = null;
-let depDatePicker = null;
-let depTimePicker = null;
-let retDatePicker = null;
-let retTimePicker = null;
-let makkahZiyaratDatePicker = null;
-let madinahZiyaratDatePicker = null;
+// ------------------------------------------------------------------------------
+// 2. SUPABASE DATABASE INITIALIZATION
+// ------------------------------------------------------------------------------
+const SUPABASE_URL = process.env.SUPABASE_URL;
+const SUPABASE_KEY = process.env.SUPABASE_ANON_KEY || process.env.SUPABASE_SERVICE_ROLE_KEY;
 
-// ==========================================
-// 2. HELPER FUNCTIONS & UTILITIES
-// ==========================================
-function safeGetLocalStorage(key, defaultValue) {
-  try {
-    const item = localStorage.getItem(key);
-    return item ? JSON.parse(item) : defaultValue;
-  } catch (err) {
-    console.error(`Error reading ${key} from localStorage:`, err);
-    return defaultValue;
-  }
+if (!SUPABASE_URL || !SUPABASE_KEY) {
+  console.error('================================================================');
+  console.error('FATAL ERROR: SUPABASE_URL or SUPABASE_KEY is missing in process.env!');
+  console.error('Please configure your .env file correctly.');
+  console.error('================================================================');
+  process.exit(1);
 }
 
-function safeGetSession() {
-  try {
-    const session = localStorage.getItem('tvg_session');
-    return session ? JSON.parse(session) : null;
-  } catch (e) {
-    console.error("Corrupted session data", e);
-    return null;
-  }
-}
-
-function formatDateToDMY(dateStr) {
-  if (!dateStr) return '-';
-  const d = new Date(dateStr);
-  if (isNaN(d.getTime())) return dateStr;
-  return d.toLocaleDateString('en-GB');
-}
-
-function formatCreatorName(createdBy, role) {
-  if (!createdBy) return 'System';
-  const roleLabel = role ? ` (${role})` : '';
-  return `${createdBy}${roleLabel}`;
-}
-
-// ==========================================
-// 3. INITIALIZATION & GLOBAL EVENT BINDING
-// ==========================================
-document.addEventListener('DOMContentLoaded', async () => {
-  checkAuth();
-  initDatePickers();
-  bindGlobalEvents();
-  await initDashboard();
+const supabase = createClient(SUPABASE_URL, SUPABASE_KEY, {
+  auth: {
+    persistSession: false,
+    autoRefreshToken: false,
+  },
+  db: {
+    schema: 'public',
+  },
 });
 
-function bindGlobalEvents() {
-  // Logo URL Input & Real-time Header Preview
-  const logoInput = document.getElementById('settingLogoUrl');
-  if (logoInput) {
-    logoInput.addEventListener('input', (e) => {
-      const url = e.target.value.trim();
-      updateHeaderBranding({ ...currentAgencySettings, logoUrl: url });
-    });
-  }
+console.log('[SUPABASE INIT] Successfully connected to Supabase Client.');
 
-  // Live Preview Modal Trigger Buttons
-  const previewBtns = [
-    document.getElementById('btnLivePreview'),
-    document.getElementById('btnPreviewVoucher'),
-    document.getElementById('btnFloatingPreview')
-  ];
-  previewBtns.forEach(btn => {
-    if (btn) {
-      btn.addEventListener('click', (e) => {
-        e.preventDefault();
-        openLivePreviewModal();
-      });
-    }
+// ------------------------------------------------------------------------------
+// 3. SECURITY & GLOBAL MIDDLEWARES
+// ------------------------------------------------------------------------------
+app.set('trust proxy', 1);
+
+// Security Headers via Helmet
+app.use(
+  helmet({
+    contentSecurityPolicy: {
+      directives: {
+        defaultSrc: ["'self'"],
+        scriptSrc: ["'self'", "'unsafe-inline'", "'unsafe-eval'"],
+        styleSrc: ["'self'", "'unsafe-inline'", 'https://fonts.googleapis.com'],
+        fontSrc: ["'self'", 'https://fonts.gstatic.com'],
+        imgSrc: ["'self'", 'data:', 'blob:', 'https:'],
+        connectSrc: ["'self'", SUPABASE_URL, 'wss:', 'https:'],
+      },
+    },
+    crossOriginEmbedderPolicy: false,
+  })
+);
+
+// Gzip Compression
+app.use(compression());
+
+// CORS Configuration
+const allowedOrigins = process.env.ALLOWED_ORIGINS
+  ? process.env.ALLOWED_ORIGINS.split(',')
+  : ['http://localhost:3000', 'http://localhost:5000', 'http://127.0.0.1:5000'];
+
+app.use(
+  cors({
+    origin: (origin, callback) => {
+      if (!origin || allowedOrigins.includes(origin) || NODE_ENV === 'development') {
+        callback(null, true);
+      } else {
+        callback(new Error('CORS Policy: Access Blocked by Security Policies'));
+      }
+    },
+    methods: ['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS'],
+    allowedHeaders: ['Content-Type', 'Authorization', 'X-Requested-With', 'X-Api-Key'],
+    credentials: true,
+  })
+);
+
+// Body Parsers
+app.use(express.json({ limit: '25mb' }));
+app.use(express.urlencoded({ extended: true, limit: '25mb' }));
+
+// Request Logging
+if (NODE_ENV === 'development') {
+  app.use(morgan('dev'));
+} else {
+  app.use(morgan('combined'));
+}
+
+// Serve Static Files
+app.use(express.static(PUBLIC_DIR));
+app.use('/uploads', express.static(UPLOAD_DIR));
+app.use('/temp_pdfs', express.static(PDF_TEMP_DIR));
+
+// Rate Limiting Config
+const apiRateLimiter = rateLimit({
+  windowMs: 15 * 60 * 1000, // 15 minutes
+  max: 200,
+  standardHeaders: true,
+  legacyHeaders: false,
+  message: {
+    status: 429,
+    error: 'Too Many Requests',
+    message: 'Too many requests from this IP address, please try again after 15 minutes.',
+  },
+});
+
+const authRateLimiter = rateLimit({
+  windowMs: 60 * 60 * 1000, // 1 hour
+  max: 20,
+  message: {
+    status: 429,
+    error: 'Auth Rate Limit Exceeded',
+    message: 'Too many failed login/signup attempts. Please try again after 1 hour.',
+  },
+});
+
+app.use('/api/', apiRateLimiter);
+
+// Custom Request Timestamp Decorator
+app.use((req, res, next) => {
+  req.requestTime = new Date().toISOString();
+  req.uniqueId = crypto.randomUUID();
+  res.setHeader('X-Request-ID', req.uniqueId);
+  next();
+});
+
+// ------------------------------------------------------------------------------
+// 4. UTILITY & HELPER FUNCTIONS
+// ------------------------------------------------------------------------------
+
+/**
+ * Standardized API Response Formatter
+ */
+const sendResponse = (res, statusCode, success, message, data = null, meta = null) => {
+  return res.status(statusCode).json({
+    success,
+    status: statusCode,
+    message,
+    data,
+    meta,
+    timestamp: new Date().toISOString(),
   });
+};
 
-  // Direct PDF Download Buttons
-  const downloadPdfBtns = [
-    document.getElementById('btnDownloadPdf'),
-    document.getElementById('btnGeneratePdf'),
-    document.getElementById('btnDirectPdfDownload')
-  ];
-  downloadPdfBtns.forEach(btn => {
-    if (btn) {
-      btn.addEventListener('click', async (e) => {
-        e.preventDefault();
-        await generateAndDownloadPDFFromForm();
-      });
-    }
-  });
+/**
+ * Hash password securely using bcrypt
+ */
+const hashPassword = async (plainPassword) => {
+  const salt = await bcrypt.genSalt(12);
+  return await bcrypt.hash(plainPassword, salt);
+};
 
-  // Save Voucher Button
-  const saveBtn = document.getElementById('btnSaveVoucher');
-  if (saveBtn) {
-    saveBtn.addEventListener('click', async (e) => {
-      e.preventDefault();
-      await saveVoucher();
-    });
-  }
-}
+/**
+ * Compare plain password against hashed password
+ */
+const comparePassword = async (plainPassword, hashedPassword) => {
+  return await bcrypt.compare(plainPassword, hashedPassword);
+};
 
-async function initDashboard() {
-  await fetchAgencySettings();
-  await fetchSavedVouchers();
-}
+/**
+ * Generate JWT Token for Session Management
+ */
+const generateJwtToken = (payload) => {
+  return jwt.sign(payload, JWT_SECRET, { expiresIn: JWT_EXPIRES_IN });
+};
 
-function initDatePickers() {
-  if (typeof flatpickr === 'undefined') return;
+/**
+ * Sanitize user payload for response output (removes credentials)
+ */
+const sanitizeUser = (user) => {
+  if (!user) return null;
+  const { password, password_hash, secret_key, reset_token, ...safeUser } = user;
+  return safeUser;
+};
 
-  const dateConfig = { dateFormat: "Y-m-d", allowInput: true };
-  const timeConfig = { enableTime: true, noCalendar: true, dateFormat: "H:i", time_24hr: true };
-
-  const pickers = [
-    { id: 'voucherDate', setter: (inst) => voucherDatePicker = inst, cfg: dateConfig },
-    { id: 'transportDate', setter: (inst) => transportDatePicker = inst, cfg: dateConfig },
-    { id: 'depDate', setter: (inst) => depDatePicker = inst, cfg: dateConfig },
-    { id: 'depTime', setter: (inst) => depTimePicker = inst, cfg: timeConfig },
-    { id: 'retDate', setter: (inst) => retDatePicker = inst, cfg: dateConfig },
-    { id: 'retTime', setter: (inst) => retTimePicker = inst, cfg: timeConfig },
-    { id: 'makkahZiyaratDate', setter: (inst) => makkahZiyaratDatePicker = inst, cfg: dateConfig },
-    { id: 'madinahZiyaratDate', setter: (inst) => madinahZiyaratDatePicker = inst, cfg: dateConfig }
-  ];
-
-  pickers.forEach(item => {
-    const el = document.getElementById(item.id);
-    if (el) item.setter(flatpickr(el, item.cfg));
-  });
-}
-
-// ==========================================
-// 4. UI TABS & NAVIGATION CONTROL
-// ==========================================
-function switchTab(tabName) {
-  const createTab = document.getElementById('tabCreateVoucher');
-  const archiveTab = document.getElementById('tabSavedVouchers');
-  const settingsTab = document.getElementById('tabAgencySettings');
-
-  const navCreate = document.getElementById('navCreateTab');
-  const navArchive = document.getElementById('navArchiveTab');
-  const navSettings = document.getElementById('navSettingsTab');
-
-  if (createTab) createTab.classList.add('hidden');
-  if (archiveTab) archiveTab.classList.add('hidden');
-  if (settingsTab) settingsTab.classList.add('hidden');
-
-  const inactiveClass = "px-4 py-2 text-xs font-bold text-slate-300 hover:bg-emerald-800 rounded-lg transition-colors flex items-center space-x-2";
-  const activeClass = "px-4 py-2 text-xs font-bold bg-emerald-600 text-white rounded-lg shadow transition-colors flex items-center space-x-2";
-
-  if (navCreate) navCreate.className = inactiveClass;
-  if (navArchive) navArchive.className = inactiveClass;
-  if (navSettings) navSettings.className = inactiveClass;
-
-  if (tabName === 'create') {
-    if (createTab) createTab.classList.remove('hidden');
-    if (navCreate) navCreate.className = activeClass;
-  } else if (tabName === 'archive') {
-    if (archiveTab) archiveTab.classList.remove('hidden');
-    if (navArchive) navArchive.className = activeClass;
-    fetchSavedVouchers();
-  } else if (tabName === 'settings') {
-    if (settingsTab) settingsTab.classList.remove('hidden');
-    if (navSettings) navSettings.className = activeClass;
-    loadAgencySettingsToForm();
-    fetchSystemUsers();
-  }
-}
-
-// ==========================================
-// 5. DYNAMIC ROWS (PASSENGERS & HOTELS)
-// ==========================================
-function addPassengerRow(pData = {}) {
-  const tbody = document.getElementById('passengerTableBody');
-  if (!tbody) return;
-
-  const rowId = 'p_row_' + Date.now() + '_' + Math.floor(Math.random() * 1000);
-  const row = document.createElement('tr');
-  row.id = rowId;
-  row.className = "hover:bg-slate-50 transition-colors";
-
-  const showMofa = document.getElementById('includeMofaToggle')?.checked || false;
-
-  row.innerHTML = `
-    <td class="py-2 px-2">
-      <input type="text" class="p-name form-input w-full text-xs rounded border-slate-300 focus:border-emerald-500 focus:ring-emerald-500 font-semibold" placeholder="Passenger Full Name" value="${pData.name || ''}">
-    </td>
-    <td class="py-2 px-2">
-      <input type="text" class="p-pp form-input w-full text-xs font-mono rounded border-slate-300 focus:border-emerald-500 focus:ring-emerald-500" placeholder="Passport No" value="${pData.passportNo || ''}">
-    </td>
-    <td class="py-2 px-2">
-      <select class="p-type form-select w-full text-xs rounded border-slate-300 focus:border-emerald-500 focus:ring-emerald-500">
-        <option value="Adult" ${pData.type === 'Adult' ? 'selected' : ''}>Adult</option>
-        <option value="Child" ${pData.type === 'Child' ? 'selected' : ''}>Child</option>
-        <option value="Infant" ${pData.type === 'Infant' ? 'selected' : ''}>Infant</option>
-      </select>
-    </td>
-    <td class="py-2 px-2 mofa-field ${showMofa ? '' : 'hidden'}">
-      <input type="text" class="p-mofa form-input w-full text-xs font-mono rounded border-slate-300 focus:border-emerald-500 focus:ring-emerald-500" placeholder="MOFA No" value="${pData.mofaNo || ''}">
-    </td>
-    <td class="py-2 px-2 mofa-field ${showMofa ? '' : 'hidden'}">
-      <input type="text" class="p-visa form-input w-full text-xs font-mono rounded border-slate-300 focus:border-emerald-500 focus:ring-emerald-500" placeholder="Visa No" value="${pData.visaNo || ''}">
-    </td>
-    <td class="py-2 px-2 text-center">
-      <button type="button" onclick="removePassengerRow('${rowId}')" class="text-red-500 hover:text-red-700 p-1 font-bold">
-        <i class="fa-solid fa-trash-can"></i>
-      </button>
-    </td>
-  `;
-
-  tbody.appendChild(row);
-  updateTotalPaxDisplay();
-}
-
-function removePassengerRow(rowId) {
-  const row = document.getElementById(rowId);
-  if (row) {
-    row.remove();
-    updateTotalPaxDisplay();
-  }
-}
-
-function addHotelRow(hData = {}) {
-  const tbody = document.getElementById('hotelTableBody');
-  if (!tbody) return;
-
-  const rowId = 'h_row_' + Date.now() + '_' + Math.floor(Math.random() * 1000);
-  const row = document.createElement('tr');
-  row.id = rowId;
-  row.className = "hover:bg-slate-50 transition-colors";
-
-  row.innerHTML = `
-    <td class="py-2 px-2">
-      <select class="h-city form-select w-full text-xs rounded border-slate-300 focus:border-emerald-500 focus:ring-emerald-500 font-semibold">
-        <option value="Makkah" ${hData.city === 'Makkah' ? 'selected' : ''}>Makkah</option>
-        <option value="Madinah" ${hData.city === 'Madinah' ? 'selected' : ''}>Madinah</option>
-      </select>
-    </td>
-    <td class="py-2 px-2">
-      <input type="text" class="h-name form-input w-full text-xs rounded border-slate-300 focus:border-emerald-500 focus:ring-emerald-500 font-medium" placeholder="Hotel Name" value="${hData.hotelName || ''}">
-    </td>
-    <td class="py-2 px-2">
-      <input type="date" class="h-checkin form-input w-full text-xs rounded border-slate-300 focus:border-emerald-500 focus:ring-emerald-500" value="${hData.checkIn || ''}">
-    </td>
-    <td class="py-2 px-2">
-      <input type="date" class="h-checkout form-input w-full text-xs rounded border-slate-300 focus:border-emerald-500 focus:ring-emerald-500" value="${hData.checkOut || ''}">
-    </td>
-    <td class="py-2 px-2">
-      <input type="number" min="1" class="h-nights form-input w-16 text-xs rounded border-slate-300 focus:border-emerald-500 focus:ring-emerald-500 text-center font-bold" placeholder="Nights" value="${hData.nights || 1}">
-    </td>
-    <td class="py-2 px-2">
-      <input type="text" class="h-roomtype form-input w-full text-xs rounded border-slate-300 focus:border-emerald-500 focus:ring-emerald-500" placeholder="Double/Triple/Quad" value="${hData.roomType || ''}">
-    </td>
-    <td class="py-2 px-2">
-      <input type="text" class="h-meal form-input w-full text-xs rounded border-slate-300 focus:border-emerald-500 focus:ring-emerald-500" placeholder="RO / BB / Half Board" value="${hData.mealPlan || ''}">
-    </td>
-    <td class="py-2 px-2 text-center">
-      <button type="button" onclick="removeHotelRow('${rowId}')" class="text-red-500 hover:text-red-700 p-1 font-bold">
-        <i class="fa-solid fa-trash-can"></i>
-      </button>
-    </td>
-  `;
-
-  tbody.appendChild(row);
-}
-
-function removeHotelRow(rowId) {
-  const row = document.getElementById(rowId);
-  if (row) row.remove();
-}
-
-function toggleMofaFields() {
-  const isChecked = document.getElementById('includeMofaToggle')?.checked || false;
-  document.querySelectorAll('.mofa-field').forEach(field => {
-    if (isChecked) field.classList.remove('hidden');
-    else field.classList.add('hidden');
-  });
-}
-
-function togglePackageCustomInput() {
-  const select = document.getElementById('packageNameSelect');
-  const customInput = document.getElementById('packageNameCustom');
-  if (!select || !customInput) return;
-
-  if (select.value === 'CUSTOM') {
-    customInput.classList.remove('hidden');
-  } else {
-    customInput.classList.add('hidden');
-  }
-}
-
-function updateTotalPaxDisplay() {
-  const adults = parseInt(document.getElementById('adultsCount')?.value || 1, 10);
-  const children = parseInt(document.getElementById('childrenCount')?.value || 0, 10);
-  const infants = parseInt(document.getElementById('infantsCount')?.value || 0, 10);
-  const total = adults + children + infants;
-
-  const displayEl = document.getElementById('totalPaxDisplay');
-  if (displayEl) displayEl.innerText = `${total} PAX`;
-}
-
-// ==========================================
-// 6. FORM DATA HARVESTING
-// ==========================================
-function getVoucherFormData() {
-  const session = safeGetSession();
-  const createdBy = session ? session.email : 'Unknown Staff';
-  const createdByRole = session ? session.role : 'staff_pending';
-
-  const packageSelect = document.getElementById('packageNameSelect')?.value || '';
-  const customPackage = document.getElementById('packageNameCustom')?.value || '';
-  const packageName = (packageSelect === 'CUSTOM') ? customPackage : packageSelect;
-
-  const passengers = [];
-  document.querySelectorAll('#passengerTableBody tr').forEach(row => {
-    const name = row.querySelector('.p-name')?.value.trim();
-    if (name) {
-      passengers.push({
-        name: name,
-        passportNo: row.querySelector('.p-pp')?.value.trim() || '',
-        type: row.querySelector('.p-type')?.value || 'Adult',
-        mofaNo: row.querySelector('.p-mofa')?.value.trim() || '',
-        visaNo: row.querySelector('.p-visa')?.value.trim() || ''
-      });
-    }
-  });
-
-  const hotels = [];
-  document.querySelectorAll('#hotelTableBody tr').forEach(row => {
-    const hotelName = row.querySelector('.h-name')?.value.trim();
-    if (hotelName) {
-      hotels.push({
-        city: row.querySelector('.h-city')?.value || 'Makkah',
-        hotelName: hotelName,
-        checkIn: row.querySelector('.h-checkin')?.value || '',
-        checkOut: row.querySelector('.h-checkout')?.value || '',
-        nights: parseInt(row.querySelector('.h-nights')?.value || 1, 10),
-        roomType: row.querySelector('.h-roomtype')?.value || '',
-        mealPlan: row.querySelector('.h-meal')?.value || ''
-      });
-    }
-  });
-
-  const adultsCount = parseInt(document.getElementById('adultsCount')?.value || 1, 10);
-  const childrenCount = parseInt(document.getElementById('childrenCount')?.value || 0, 10);
-  const infantsCount = parseInt(document.getElementById('infantsCount')?.value || 0, 10);
-
+/**
+ * Format pagination response metadata
+ */
+const getPaginationMeta = (page, limit, totalCount) => {
+  const pageNum = parseInt(page, 10) || 1;
+  const limitNum = parseInt(limit, 10) || 10;
+  const totalPages = Math.ceil(totalCount / limitNum);
+  
   return {
-    id: document.getElementById('voucherRefId')?.value || ('TVG-' + Math.floor(100000 + Math.random() * 900000)),
-    voucherDate: document.getElementById('voucherDate')?.value || new Date().toISOString().split('T')[0],
-    familyHead: document.getElementById('familyHeadName')?.value.trim() || 'Guest Family',
-    adultsCount,
-    childrenCount,
-    infantsCount,
-    totalPax: adultsCount + childrenCount + infantsCount,
-    showMofaDetails: document.getElementById('includeMofaToggle')?.checked || false,
-    packageName,
-    passengers,
-    hotels,
-    transport: {
-      date: document.getElementById('transportDate')?.value || '',
-      transporter: document.getElementById('transporterName')?.value || '',
-      vehicleType: document.getElementById('vehicleType')?.value || '',
-      routeNo: document.getElementById('transportRouteNo')?.value || '',
-      route: document.getElementById('transportRoute')?.value || ''
-    },
-    flight: {
-      departureAirline: document.getElementById('depAirline')?.value || '',
-      departureFlightNo: document.getElementById('depFlightNo')?.value || '',
-      departureRoute: document.getElementById('depRoute')?.value || '',
-      departureDate: document.getElementById('depDate')?.value || '',
-      departureTime: document.getElementById('depTime')?.value || '',
-      returnAirline: document.getElementById('retAirline')?.value || '',
-      returnFlightNo: document.getElementById('retFlightNo')?.value || '',
-      returnRoute: document.getElementById('retRoute')?.value || '',
-      returnDate: document.getElementById('retDate')?.value || '',
-      returnTime: document.getElementById('retTime')?.value || ''
-    },
-    ziyarat: {
-      makkahIncluded: document.getElementById('makkahZiyaratSelect')?.value || 'No',
-      makkahDate: document.getElementById('makkahZiyaratDate')?.value || '',
-      madinahIncluded: document.getElementById('madinahZiyaratSelect')?.value || 'No',
-      madinahDate: document.getElementById('madinahZiyaratDate')?.value || ''
-    },
-    helplines: {
-      makkah: document.getElementById('makkahHelplineInput')?.value || '',
-      medina: document.getElementById('medinaHelplineInput')?.value || '',
-      transport: document.getElementById('transportHelplineInput')?.value || ''
-    },
-    termsUrdu: document.getElementById('termsUrduInput')?.value || '',
-    termsEnglish: document.getElementById('termsEnglishInput')?.value || '',
-    status: createdByRole === 'admin' ? 'APPROVED' : 'NOT APPROVED',
-    createdBy,
-    createdByRole
+    currentPage: pageNum,
+    itemsPerPage: limitNum,
+    totalRecords: totalCount,
+    totalPages,
+    hasNextPage: pageNum < totalPages,
+    hasPrevPage: pageNum > 1,
   };
-}
+};
 
-// ==========================================
-// 7. LIVE PREVIEW MODAL & DIRECT PDF DOWNLOAD
-// ==========================================
-async function openLivePreviewModal() {
-  const vData = getVoucherFormData();
-  const modal = document.getElementById('pdfPreviewModal');
-  const templateContainer = document.getElementById('voucher-preview-container') || document.getElementById('a4VoucherTemplate');
-  
-  if (!modal || !templateContainer) {
-    showToast('Preview Modal element not found on page', 'error');
-    return;
-  }
+// ------------------------------------------------------------------------------
+// 5. AUTHENTICATION & AUTHORIZATION MIDDLEWARES
+// ------------------------------------------------------------------------------
 
-  modal.classList.remove('hidden');
-
-  if (typeof renderA4VoucherHTML === 'function') {
-    const htmlContent = await renderA4VoucherHTML(vData, currentAgencySettings);
-    templateContainer.innerHTML = htmlContent;
-  } else {
-    // Basic fallback preview
-    templateContainer.innerHTML = `
-      <div class="p-6 bg-white rounded shadow text-slate-800 font-sans">
-        <h2 class="text-xl font-bold border-b pb-2 text-emerald-800">Voucher Preview: ${vData.id}</h2>
-        <p class="mt-2"><strong>Family Head:</strong> ${vData.familyHead}</p>
-        <p><strong>Total PAX:</strong> ${vData.totalPax}</p>
-        <p><strong>Package:</strong> ${vData.packageName}</p>
-        <p class="mt-4 text-xs text-slate-500">Full layout template loading...</p>
-      </div>
-    `;
-  }
-}
-
-function closePdfPreviewModal() {
-  const modal = document.getElementById('pdfPreviewModal');
-  if (modal) modal.classList.add('hidden');
-}
-
-async function generateAndDownloadPDFFromForm() {
-  const vData = getVoucherFormData();
-  await saveVoucher(); // Pehle record server / storage me save karein
-  await reDownloadVoucherPDF(vData.id);
-}
-
-// ==========================================
-// 8. SAVE VOUCHER ACTION
-// ==========================================
-async function saveVoucher() {
-  const vData = getVoucherFormData();
-  const session = safeGetSession();
-  const userRole = session ? session.role : 'staff_pending';
-  const userEmail = session ? session.email : 'unknown';
-
-  showToast('Saving voucher record...', 'info');
-
+/**
+ * Middleware: Verify JWT Access Token
+ */
+const authenticateToken = async (req, res, next) => {
   try {
-    const res = await fetch('/api/vouchers', {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        'x-user-role': userRole,
-        'x-user-email': userEmail
-      },
-      body: JSON.stringify(vData)
-    });
-    const result = await res.json();
-    if (result.success) {
-      showToast('Voucher saved successfully!', 'success');
-      await fetchSavedVouchers();
-    } else {
-      showToast(result.message || 'Failed to save voucher', 'warning');
-    }
-  } catch (err) {
-    console.warn("API Unavailable. Storing in LocalStorage", err);
-    let localVouchers = safeGetLocalStorage('tvg_vouchers', []);
-    const existingIdx = localVouchers.findIndex(v => v.id === vData.id);
-    if (existingIdx >= 0) localVouchers[existingIdx] = vData;
-    else localVouchers.unshift(vData);
+    const authHeader = req.headers['authorization'];
+    const token = authHeader && authHeader.startsWith('Bearer ') ? authHeader.split(' ')[1] : null;
 
-    localStorage.setItem('tvg_vouchers', JSON.stringify(localVouchers));
-    showToast('Voucher saved to local browser storage', 'info');
-    await fetchSavedVouchers();
-  }
-}
-
-// ==========================================
-// 9. BRANDING & AGENCY SETTINGS
-// ==========================================
-async function fetchAgencySettings() {
-  try {
-    const res = await fetch('/api/settings');
-    const result = await res.json();
-    if (result.success && result.settings) {
-      currentAgencySettings = result.settings;
-      localStorage.setItem('tvg_agency_settings', JSON.stringify(result.settings));
-    }
-  } catch (err) {
-    console.warn("Could not fetch agency settings from API, using cached local data.");
-  }
-  updateHeaderBranding(currentAgencySettings);
-}
-
-function loadAgencySettingsToForm() {
-  if (!currentAgencySettings) return;
-  if (document.getElementById('settingAgencyName')) document.getElementById('settingAgencyName').value = currentAgencySettings.agencyName || '';
-  if (document.getElementById('settingAgencyPhone')) document.getElementById('settingAgencyPhone').value = currentAgencySettings.phone || '';
-  if (document.getElementById('settingAgencyEmail')) document.getElementById('settingAgencyEmail').value = currentAgencySettings.email || '';
-  if (document.getElementById('settingAgencyAddress')) document.getElementById('settingAgencyAddress').value = currentAgencySettings.address || '';
-  if (document.getElementById('settingLogoUrl')) document.getElementById('settingLogoUrl').value = currentAgencySettings.logoUrl || '';
-}
-
-async function saveAgencySettings() {
-  const session = safeGetSession();
-  const userRole = session ? session.role : 'staff_pending';
-
-  const updatedSettings = {
-    agencyName: document.getElementById('settingAgencyName')?.value.trim() || 'Saudi Pak Group of Travels',
-    phone: document.getElementById('settingAgencyPhone')?.value.trim() || '',
-    email: document.getElementById('settingAgencyEmail')?.value.trim() || '',
-    address: document.getElementById('settingAgencyAddress')?.value.trim() || '',
-    logoUrl: document.getElementById('settingLogoUrl')?.value.trim() || ''
-  };
-
-  showToast('Saving agency settings...', 'info');
-
-  try {
-    const res = await fetch('/api/settings', {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        'x-user-role': userRole
-      },
-      body: JSON.stringify(updatedSettings)
-    });
-    const result = await res.json();
-    if (result.success) {
-      currentAgencySettings = updatedSettings;
-      localStorage.setItem('tvg_agency_settings', JSON.stringify(updatedSettings));
-      updateHeaderBranding(updatedSettings);
-      showToast('Settings saved successfully!', 'success');
-    } else {
-      showToast(result.message || 'Failed to save settings', 'error');
-    }
-  } catch (err) {
-    currentAgencySettings = updatedSettings;
-    localStorage.setItem('tvg_agency_settings', JSON.stringify(updatedSettings));
-    updateHeaderBranding(updatedSettings);
-    showToast('Saved to local storage', 'info');
-  }
-}
-
-function updateHeaderBranding(settings) {
-  const nameEl = document.getElementById('headerAgencyName');
-  const logoEl = document.getElementById('headerAgencyLogo');
-  if (nameEl) nameEl.innerText = settings.agencyName || 'Saudi Pak Group of Travels';
-  if (logoEl && settings.logoUrl) {
-    logoEl.src = settings.logoUrl;
-    logoEl.classList.remove('hidden');
-  }
-}
-
-// ==========================================
-// 10. SAVED VOUCHERS ARCHIVE
-// ==========================================
-async function fetchSavedVouchers() {
-  try {
-    const res = await fetch('/api/vouchers');
-    const result = await res.json();
-    if (result.success && Array.isArray(result.vouchers || result.data)) {
-      savedVouchersList = result.vouchers || result.data;
-    }
-  } catch (err) {
-    savedVouchersList = safeGetLocalStorage('tvg_vouchers', []);
-  }
-
-  renderSavedVouchersTable(savedVouchersList);
-  renderDrawerVouchers(savedVouchersList);
-}
-
-function renderSavedVouchersTable(vouchers) {
-  const tbody = document.getElementById('savedVouchersTableBody');
-  const noMsg = document.getElementById('noVouchersMessage');
-  const badge = document.getElementById('savedVoucherBadge');
-
-  if (badge) badge.innerText = (vouchers || []).length;
-  if (!tbody || !noMsg) return;
-
-  if (!vouchers || vouchers.length === 0) {
-    tbody.innerHTML = '';
-    noMsg.classList.remove('hidden');
-    return;
-  }
-
-  const user = safeGetSession();
-  const isAuthorizedToApprove = user && (user.role === 'admin' || user.role === 'staff_approved');
-
-  noMsg.classList.add('hidden');
-  tbody.innerHTML = vouchers.map(v => {
-    const status = v.status || 'NOT APPROVED';
-    const statusBadgeClass = status === 'APPROVED'
-      ? 'bg-emerald-100 text-emerald-800'
-      : 'bg-rose-100 text-rose-800';
-
-    let approveButton = '';
-    if (isAuthorizedToApprove && status === 'NOT APPROVED') {
-      approveButton = `
-        <button type="button" onclick="approveVoucher('${v.id}')" title="Approve Voucher" class="px-2 py-1 bg-teal-600 hover:bg-teal-700 text-white border border-teal-700 rounded text-xs font-bold shadow-sm">
-          <i class="fa-solid fa-circle-check"></i> Approve
-        </button>
-      `;
+    if (!token) {
+      return sendResponse(res, 401, false, 'Access Denied: Missing Authorization Header');
     }
 
-    return `
-      <tr class="hover:bg-emerald-50/40 transition-colors">
-        <td class="font-bold text-emerald-800 font-mono py-2 px-3">${v.id}</td>
-        <td class="py-2 px-3 text-slate-600">${v.voucherDate || '-'}</td>
-        <td class="font-bold text-slate-900 py-2 px-3 text-xs">
-          <div>${v.familyHead || '-'}</div>
-          <div class="text-[9px] text-slate-400 font-normal mt-0.5">Created by: ${formatCreatorName(v.createdBy, v.createdByRole)}</div>
-        </td>
-        <td class="py-2 px-3 text-slate-700 font-medium">${v.packageName || '-'}</td>
-        <td class="text-center font-bold py-2 px-3"><span class="px-2 py-0.5 bg-emerald-100 text-emerald-800 rounded-full text-xs">${v.totalPax || 1} PAX</span></td>
-        <td class="text-center py-2 px-3"><span class="px-2 py-0.5 rounded-full text-xs font-bold ${statusBadgeClass}">${status}</span></td>
-        <td class="py-2 px-3">
-          <div class="flex items-center space-x-1.5">
-            ${approveButton}
-            <button type="button" onclick="previewSavedVoucher('${v.id}')" title="Preview PDF" class="px-2 py-1 bg-emerald-50 text-emerald-700 hover:bg-emerald-100 border border-emerald-300 rounded text-xs font-semibold">
-              <i class="fa-solid fa-eye"></i> View
-            </button>
-            <button type="button" onclick="loadVoucherToForm('${v.id}')" title="Edit / Load to Form" class="px-2 py-1 bg-amber-50 text-amber-700 hover:bg-amber-100 border border-amber-300 rounded text-xs font-semibold">
-              <i class="fa-solid fa-pen-to-square"></i> Edit
-            </button>
-            <button type="button" onclick="deleteSavedVoucher('${v.id}')" title="Delete" class="px-2 py-1 bg-red-50 text-red-700 hover:bg-red-100 border border-red-200 rounded text-xs font-semibold">
-              <i class="fa-solid fa-trash-can"></i>
-            </button>
-          </div>
-        </td>
-      </tr>
-    `;
-  }).join('');
-}
-
-function searchSavedVouchers() {
-  const searchInput = document.getElementById('searchVoucherInput');
-  if (!searchInput) return;
-  const query = searchInput.value.toLowerCase().trim();
-  const filtered = (savedVouchersList || []).filter(v => 
-    (v.id && v.id.toLowerCase().includes(query)) ||
-    (v.familyHead && v.familyHead.toLowerCase().includes(query)) ||
-    (v.packageName && v.packageName.toLowerCase().includes(query)) ||
-    (v.voucherDate && v.voucherDate.toLowerCase().includes(query))
-  );
-  renderSavedVouchersTable(filtered);
-}
-
-async function previewSavedVoucher(id) {
-  const v = (savedVouchersList || []).find(item => item.id === id);
-  if (!v) return;
-
-  const modal = document.getElementById('pdfPreviewModal');
-  const templateContainer = document.getElementById('voucher-preview-container') || document.getElementById('a4VoucherTemplate');
-  if (!modal || !templateContainer) return;
-
-  modal.classList.remove('hidden');
-  if (typeof renderA4VoucherHTML === 'function') {
-    const renderedHtml = await renderA4VoucherHTML(v, currentAgencySettings);
-    templateContainer.innerHTML = renderedHtml;
-  }
-}
-
-function loadVoucherToForm(id) {
-  const v = (savedVouchersList || []).find(item => item.id === id);
-  if (!v) return;
-
-  if (document.getElementById('voucherRefId')) document.getElementById('voucherRefId').value = v.id;
-  
-  if (voucherDatePicker && v.voucherDate) {
-    voucherDatePicker.setDate(v.voucherDate);
-  } else if (document.getElementById('voucherDate')) {
-    document.getElementById('voucherDate').value = v.voucherDate || '';
-  }
-
-  if (document.getElementById('familyHeadName')) document.getElementById('familyHeadName').value = v.familyHead || '';
-  if (document.getElementById('adultsCount')) document.getElementById('adultsCount').value = v.adultsCount || 1;
-  if (document.getElementById('childrenCount')) document.getElementById('childrenCount').value = v.childrenCount || 0;
-  if (document.getElementById('infantsCount')) document.getElementById('infantsCount').value = v.infantsCount || 0;
-  updateTotalPaxDisplay();
-
-  const mofaToggle = document.getElementById('includeMofaToggle');
-  if (mofaToggle) {
-    mofaToggle.checked = v.showMofaDetails || false;
-    toggleMofaFields();
-  }
-
-  const packageSelect = document.getElementById('packageNameSelect');
-  const customInput = document.getElementById('packageNameCustom');
-  if (packageSelect && customInput) {
-    let optionExists = Array.from(packageSelect.options).some(opt => opt.value === v.packageName);
-    if (optionExists) {
-      packageSelect.value = v.packageName;
-      customInput.classList.add('hidden');
-    } else {
-      packageSelect.value = 'CUSTOM';
-      customInput.value = v.packageName || '';
-      customInput.classList.remove('hidden');
-    }
-  }
-
-  // Load Dynamic Passengers
-  const pBody = document.getElementById('passengerTableBody');
-  if (pBody) {
-    pBody.innerHTML = '';
-    if (v.passengers && v.passengers.length > 0) {
-      v.passengers.forEach(p => addPassengerRow(p));
-    } else {
-      addPassengerRow();
-    }
-  }
-
-  // Load Dynamic Hotels
-  const hBody = document.getElementById('hotelTableBody');
-  if (hBody) {
-    hBody.innerHTML = '';
-    if (v.hotels && v.hotels.length > 0) {
-      v.hotels.forEach(h => addHotelRow(h));
-    } else {
-      addHotelRow();
-    }
-  }
-
-  // Load Transport Details
-  if (v.transport) {
-    if (transportDatePicker && v.transport.date) transportDatePicker.setDate(v.transport.date);
-    else if (v.transport.date && document.getElementById('transportDate')) document.getElementById('transportDate').value = v.transport.date;
-    if (v.transport.transporter && document.getElementById('transporterName')) document.getElementById('transporterName').value = v.transport.transporter;
-    if (v.transport.vehicleType && document.getElementById('vehicleType')) document.getElementById('vehicleType').value = v.transport.vehicleType;
-    if (v.transport.routeNo && document.getElementById('transportRouteNo')) document.getElementById('transportRouteNo').value = v.transport.routeNo;
-    if (v.transport.route && document.getElementById('transportRoute')) document.getElementById('transportRoute').value = v.transport.route;
-  }
-
-  // Load Flight Details
-  if (v.flight) {
-    if (v.flight.departureAirline && document.getElementById('depAirline')) document.getElementById('depAirline').value = v.flight.departureAirline;
-    if (v.flight.departureFlightNo && document.getElementById('depFlightNo')) document.getElementById('depFlightNo').value = v.flight.departureFlightNo;
-    if (v.flight.departureRoute && document.getElementById('depRoute')) document.getElementById('depRoute').value = v.flight.departureRoute;
-    if (depDatePicker && v.flight.departureDate) depDatePicker.setDate(v.flight.departureDate);
-    if (depTimePicker && v.flight.departureTime) depTimePicker.setDate(v.flight.departureTime);
-
-    if (v.flight.returnAirline && document.getElementById('retAirline')) document.getElementById('retAirline').value = v.flight.returnAirline;
-    if (v.flight.returnFlightNo && document.getElementById('retFlightNo')) document.getElementById('retFlightNo').value = v.flight.returnFlightNo;
-    if (v.flight.returnRoute && document.getElementById('retRoute')) document.getElementById('retRoute').value = v.flight.returnRoute;
-    if (retDatePicker && v.flight.returnDate) retDatePicker.setDate(v.flight.returnDate);
-    if (retTimePicker && v.flight.returnTime) retTimePicker.setDate(v.flight.returnTime);
-  }
-
-  // Load Helplines
-  if (v.helplines) {
-    if (v.helplines.makkah && document.getElementById('makkahHelplineInput')) document.getElementById('makkahHelplineInput').value = v.helplines.makkah;
-    if (v.helplines.medina && document.getElementById('medinaHelplineInput')) document.getElementById('medinaHelplineInput').value = v.helplines.medina;
-    if (v.helplines.transport && document.getElementById('transportHelplineInput')) document.getElementById('transportHelplineInput').value = v.helplines.transport;
-  }
-
-  // Load Ziyarat
-  if (v.ziyarat) {
-    if (document.getElementById('makkahZiyaratSelect')) document.getElementById('makkahZiyaratSelect').value = v.ziyarat.makkahIncluded || 'No';
-    if (makkahZiyaratDatePicker && v.ziyarat.makkahDate) makkahZiyaratDatePicker.setDate(v.ziyarat.makkahDate);
-
-    if (document.getElementById('madinahZiyaratSelect')) document.getElementById('madinahZiyaratSelect').value = v.ziyarat.madinahIncluded || 'No';
-    if (madinahZiyaratDatePicker && v.ziyarat.madinahDate) madinahZiyaratDatePicker.setDate(v.ziyarat.madinahDate);
-  }
-
-  if (v.termsUrdu && document.getElementById('termsUrduInput')) document.getElementById('termsUrduInput').value = v.termsUrdu;
-  if (v.termsEnglish && document.getElementById('termsEnglishInput')) document.getElementById('termsEnglishInput').value = v.termsEnglish;
-
-  switchTab('create');
-  showToast(`Voucher ${v.id} loaded to form for editing`, 'info');
-}
-
-async function deleteSavedVoucher(id) {
-  if (!confirm(`Are you sure you want to delete Voucher Ref: ${id}?`)) return;
-
-  const user = safeGetSession();
-  const userRole = user ? user.role : 'staff_pending';
-  const userEmail = user ? user.email : 'unknown';
-
-  try {
-    const res = await fetch(`/api/vouchers/${id}`, { 
-      method: 'DELETE',
-      headers: {
-        'x-user-role': userRole,
-        'x-user-email': userEmail
+    jwt.verify(token, JWT_SECRET, async (err, decodedUser) => {
+      if (err) {
+        if (err.name === 'TokenExpiredError') {
+          return sendResponse(res, 401, false, 'Authentication Failed: Token has expired');
+        }
+        return sendResponse(res, 403, false, 'Authentication Failed: Invalid Authorization Token');
       }
+
+      // Fetch active user status from database via Supabase
+      const { data: user, error } = await supabase
+        .from('users')
+        .select('id, email, username, role, is_active, created_at')
+        .eq('id', decodedUser.id)
+        .single();
+
+      if (error || !user) {
+        return sendResponse(res, 401, false, 'Authentication Failed: User record no longer exists');
+      }
+
+      if (!user.is_active) {
+        return sendResponse(res, 403, false, 'Account Suspended: Contact administrator for support');
+      }
+
+      req.user = user;
+      next();
     });
-    const result = await res.json();
-    if (result.success) {
-      showToast(`Voucher ${id} deleted`, 'info');
+  } catch (error) {
+    console.error('[AUTH MIDDLEWARE ERROR]:', error);
+    return sendResponse(res, 500, false, 'Internal Authentication Processing Error');
+  }
+};
+
+/**
+ * Middleware: Role-Based Authorization Check
+ * @param {Array<string>} allowedRoles 
+ */
+const authorizeRoles = (...allowedRoles) => {
+  return (req, res, next) => {
+    if (!req.user) {
+      return sendResponse(res, 401, false, 'Unauthorized: Authenticated user context required');
     }
-  } catch (err) {
-    let localVouchers = safeGetLocalStorage('tvg_vouchers', []);
-    localVouchers = localVouchers.filter(v => v.id !== id);
-    localStorage.setItem('tvg_vouchers', JSON.stringify(localVouchers));
-    showToast(`Voucher ${id} deleted from local storage`, 'info');
+
+    if (!allowedRoles.includes(req.user.role)) {
+      return sendResponse(res, 403, false, `Forbidden: Require one of the following roles: [${allowedRoles.join(', ')}]`);
+    }
+
+    next();
+  };
+};
+
+/**
+ * Middleware: Optional Authentication Filter
+ */
+const optionalAuth = async (req, res, next) => {
+  const authHeader = req.headers['authorization'];
+  const token = authHeader && authHeader.startsWith('Bearer ') ? authHeader.split(' ')[1] : null;
+
+  if (!token) {
+    req.user = null;
+    return next();
   }
 
-  await fetchSavedVouchers();
+  try {
+    const decoded = jwt.verify(token, JWT_SECRET);
+    const { data: user } = await supabase
+      .from('users')
+      .select('id, email, username, role, is_active')
+      .eq('id', decoded.id)
+      .single();
+
+    req.user = user && user.is_active ? user : null;
+  } catch (e) {
+    req.user = null;
+  }
+
+  next();
+};
+
+// ------------------------------------------------------------------------------
+// END OF CHUNK 1/5
+// ==============================================================================
+// ==============================================================================
+// FILE: app.js
+// CHUNK: 2 / 5 (Authentication, User Management, Password Reset & Profile Handling)
+// ==============================================================================
+
+// Apply strict rate limiting to all auth endpoints
+app.use('/api/v1/auth/login', authRateLimiter);
+app.use('/api/v1/auth/register', authRateLimiter);
+
+// ------------------------------------------------------------------------------
+// 6. AUTHENTICATION ROUTES & CONTROLLERS
+// ------------------------------------------------------------------------------
+
+/**
+ * @route   POST /api/v1/auth/register
+ * @desc    Register a new user account with Supabase persistence
+ * @access  Public
+ */
+app.post('/api/v1/auth/register', async (req, res) => {
+  try {
+    const { username, email, password, full_name, role } = req.body;
+
+    // Basic Input Validation
+    if (!username || !email || !password) {
+      return sendResponse(res, 400, false, 'Validation Error: Username, email, and password are required');
+    }
+
+    // Email format validation
+    const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+    if (!emailRegex.test(email)) {
+      return sendResponse(res, 400, false, 'Validation Error: Invalid email format');
+    }
+
+    // Password strength check
+    if (password.length < 8) {
+      return sendResponse(res, 400, false, 'Validation Error: Password must be at least 8 characters long');
+    }
+
+    // Check if user or email already exists
+    const { data: existingUser, error: checkError } = await supabase
+      .from('users')
+      .select('id, email, username')
+      .or(`email.eq.${email.toLowerCase()},username.eq.${username.toLowerCase()}`)
+      .maybeSingle();
+
+    if (checkError) {
+      console.error('[REGISTRATION DB ERROR]:', checkError);
+      return sendResponse(res, 500, false, 'Database query failure during account check');
+    }
+
+    if (existingUser) {
+      if (existingUser.email === email.toLowerCase()) {
+        return sendResponse(res, 409, false, 'Conflict: Email address is already registered');
+      }
+      return sendResponse(res, 409, false, 'Conflict: Username is already taken');
+    }
+
+    // Hash user password
+    const hashedPassword = await hashPassword(password);
+
+    // Assign default role (prevent unauthorized admin privilege escalation)
+    const assignedRole = (role === 'admin' && req.user?.role === 'admin') ? 'admin' : 'user';
+
+    const newUserPayload = {
+      username: username.toLowerCase().trim(),
+      email: email.toLowerCase().trim(),
+      password_hash: hashedPassword,
+      full_name: full_name ? full_name.trim() : null,
+      role: assignedRole,
+      is_active: true,
+      email_verified: false,
+      created_at: new Date().toISOString(),
+      updated_at: new Date().toISOString()
+    };
+
+    // Insert user record into Supabase
+    const { data: createdUser, error: insertError } = await supabase
+      .from('users')
+      .insert([newUserPayload])
+      .select('id, username, email, full_name, role, is_active, created_at')
+      .single();
+
+    if (insertError) {
+      console.error('[SUPABASE INSERT USER ERROR]:', insertError);
+      return sendResponse(res, 500, false, 'Failed to create user account in database');
+    }
+
+    // Generate JWT Token for seamless auto-login
+    const token = generateJwtToken({
+      id: createdUser.id,
+      email: createdUser.email,
+      role: createdUser.role
+    });
+
+    return sendResponse(res, 201, true, 'User registration successfully completed', {
+      user: sanitizeUser(createdUser),
+      token
+    });
+
+  } catch (error) {
+    console.error('[REGISTER ROUTE EXCEPTION]:', error);
+    return sendResponse(res, 500, false, 'Server Exception occurred during registration');
+  }
+});
+
+/**
+ * @route   POST /api/v1/auth/login
+ * @desc    Authenticate user credentials and issue JWT Access Token
+ * @access  Public
+ */
+app.post('/api/v1/auth/login', async (req, res) => {
+  try {
+    const { identity, password } = req.body; // identity can be email or username
+
+    if (!identity || !password) {
+      return sendResponse(res, 400, false, 'Validation Error: Please provide identity (email/username) and password');
+    }
+
+    // Lookup user by email or username
+    const isEmail = identity.includes('@');
+    const queryField = isEmail ? 'email' : 'username';
+
+    const { data: user, error } = await supabase
+      .from('users')
+      .select('*')
+      .eq(queryField, identity.toLowerCase().trim())
+      .single();
+
+    if (error || !user) {
+      return sendResponse(res, 401, false, 'Invalid Credentials: User account not found');
+    }
+
+    // Check account status
+    if (!user.is_active) {
+      return sendResponse(res, 403, false, 'Account Disabled: Your account has been suspended by an administrator');
+    }
+
+    // Verify Password match
+    const isMatch = await comparePassword(password, user.password_hash);
+    if (!isMatch) {
+      return sendResponse(res, 401, false, 'Invalid Credentials: Incorrect password provided');
+    }
+
+    // Update last_login timestamp in DB asynchronously
+    await supabase
+      .from('users')
+      .update({ last_login_at: new Date().toISOString() })
+      .eq('id', user.id);
+
+    // Issue Authentication Token
+    const token = generateJwtToken({
+      id: user.id,
+      email: user.email,
+      role: user.role
+    });
+
+    return sendResponse(res, 200, true, 'Authentication successful', {
+      user: sanitizeUser(user),
+      token
+    });
+
+  } catch (error) {
+    console.error('[LOGIN ROUTE EXCEPTION]:', error);
+    return sendResponse(res, 500, false, 'Server Exception occurred during login processing');
+  }
+});
+
+/**
+ * @route   GET /api/v1/auth/me
+ * @desc    Fetch active user profile details based on Bearer Token
+ * @access  Private
+ */
+app.get('/api/v1/auth/me', authenticateToken, async (req, res) => {
+  try {
+    const { data: userProfile, error } = await supabase
+      .from('users')
+      .select('id, username, email, full_name, role, is_active, email_verified, last_login_at, created_at, updated_at')
+      .eq('id', req.user.id)
+      .single();
+
+    if (error || !userProfile) {
+      return sendResponse(res, 404, false, 'User profile record not found');
+    }
+
+    return sendResponse(res, 200, true, 'User profile retrieved successfully', {
+      user: userProfile
+    });
+  } catch (error) {
+    console.error('[AUTH ME EXCEPTION]:', error);
+    return sendResponse(res, 500, false, 'Server Exception while retrieving profile');
+  }
+});
+
+/**
+ * @route   PUT /api/v1/auth/profile
+ * @desc    Update authenticated user's profile metadata
+ * @access  Private
+ */
+app.put('/api/v1/auth/profile', authenticateToken, async (req, res) => {
+  try {
+    const { full_name, phone, avatar_url } = req.body;
+
+    const updatePayload = {
+      updated_at: new Date().toISOString()
+    };
+
+    if (full_name !== undefined) updatePayload.full_name = full_name.trim();
+    if (phone !== undefined) updatePayload.phone = phone.trim();
+    if (avatar_url !== undefined) updatePayload.avatar_url = avatar_url.trim();
+
+    const { data: updatedUser, error } = await supabase
+      .from('users')
+      .update(updatePayload)
+      .eq('id', req.user.id)
+      .select('id, username, email, full_name, phone, avatar_url, role, updated_at')
+      .single();
+
+    if (error) {
+      console.error('[UPDATE PROFILE DB ERROR]:', error);
+      return sendResponse(res, 500, false, 'Failed to update user profile details in database');
+    }
+
+    return sendResponse(res, 200, true, 'Profile details successfully updated', {
+      user: updatedUser
+    });
+  } catch (error) {
+    console.error('[UPDATE PROFILE EXCEPTION]:', error);
+    return sendResponse(res, 500, false, 'Server Exception while updating profile');
+  }
+});
+
+/**
+ * @route   POST /api/v1/auth/change-password
+ * @desc    Change password for authenticated active user
+ * @access  Private
+ */
+app.post('/api/v1/auth/change-password', authenticateToken, async (req, res) => {
+  try {
+    const { current_password, new_password } = req.body;
+
+    if (!current_password || !new_password) {
+      return sendResponse(res, 400, false, 'Validation Error: Current password and new password are required');
+    }
+
+    if (new_password.length < 8) {
+      return sendResponse(res, 400, false, 'Validation Error: New password must be at least 8 characters');
+    }
+
+    // Fetch existing password hash from DB
+    const { data: user, error } = await supabase
+      .from('users')
+      .select('password_hash')
+      .eq('id', req.user.id)
+      .single();
+
+    if (error || !user) {
+      return sendResponse(res, 404, false, 'User account record not found');
+    }
+
+    // Verify current password match
+    const isMatch = await comparePassword(current_password, user.password_hash);
+    if (!isMatch) {
+      return sendResponse(res, 400, false, 'Authentication Failed: Current password does not match');
+    }
+
+    // Hash new password and update
+    const newHashedPassword = await hashPassword(new_password);
+
+    const { error: updateError } = await supabase
+      .from('users')
+      .update({
+        password_hash: newHashedPassword,
+        updated_at: new Date().toISOString()
+      })
+      .eq('id', req.user.id);
+
+    if (updateError) {
+      console.error('[CHANGE PASSWORD DB ERROR]:', updateError);
+      return sendResponse(res, 500, false, 'Failed to save new password to database');
+    }
+
+    return sendResponse(res, 200, true, 'Password changed successfully');
+
+  } catch (error) {
+    console.error('[CHANGE PASSWORD EXCEPTION]:', error);
+    return sendResponse(res, 500, false, 'Server Exception occurred while changing password');
+  }
+});
+
+/**
+ * @route   POST /api/v1/auth/request-reset
+ * @desc    Request a password reset token (Initiates reset workflow)
+ * @access  Public
+ */
+app.post('/api/v1/auth/request-reset', authRateLimiter, async (req, res) => {
+  try {
+    const { email } = req.body;
+
+    if (!email) {
+      return sendResponse(res, 400, false, 'Validation Error: Email address is required');
+    }
+
+    const { data: user, error } = await supabase
+      .from('users')
+      .select('id, email')
+      .eq('email', email.toLowerCase().trim())
+      .single();
+
+    // Generic success message to prevent user enumeration attacks
+    const successMsg = 'If the email exists in our records, a password reset link has been dispatched.';
+
+    if (error || !user) {
+      return sendResponse(res, 200, true, successMsg);
+    }
+
+    // Generate secure random reset token
+    const resetToken = crypto.randomBytes(32).toString('hex');
+    const resetTokenHash = crypto.createHash('sha256').update(resetToken).digest('hex');
+    const resetExpiresAt = new Date(Date.now() + 60 * 60 * 1000).toISOString(); // 1 hour validity
+
+    await supabase
+      .from('users')
+      .update({
+        reset_token_hash: resetTokenHash,
+        reset_token_expires_at: resetExpiresAt
+      })
+      .eq('id', user.id);
+
+    console.log(`[PASS RESET TOKEN GENERATED] User ID: ${user.id} | Token: ${resetToken}`);
+
+    return sendResponse(res, 200, true, successMsg, { resetToken }); // Output token for dev/testing environment
+
+  } catch (error) {
+    console.error('[REQUEST RESET EXCEPTION]:', error);
+    return sendResponse(res, 500, false, 'Server Exception processing password reset request');
+  }
+});
+
+/**
+ * @route   POST /api/v1/auth/reset-password
+ * @desc    Confirm password reset using token
+ * @access  Public
+ */
+app.post('/api/v1/auth/reset-password', authRateLimiter, async (req, res) => {
+  try {
+    const { token, new_password } = req.body;
+
+    if (!token || !new_password) {
+      return sendResponse(res, 400, false, 'Validation Error: Reset token and new password are required');
+    }
+
+    if (new_password.length < 8) {
+      return sendResponse(res, 400, false, 'Validation Error: New password must be at least 8 characters');
+    }
+
+    const resetTokenHash = crypto.createHash('sha256').update(token).digest('hex');
+
+    // Find user with matching unexpired reset token
+    const { data: user, error } = await supabase
+      .from('users')
+      .select('id, reset_token_expires_at')
+      .eq('reset_token_hash', resetTokenHash)
+      .single();
+
+    if (error || !user) {
+      return sendResponse(res, 400, false, 'Invalid or expired password reset token');
+    }
+
+    // Check expiration
+    if (new Date(user.reset_token_expires_at) < new Date()) {
+      return sendResponse(res, 400, false, 'Reset Token Error: Password reset link has expired');
+    }
+
+    // Update password and clear reset tokens
+    const newHashedPassword = await hashPassword(new_password);
+
+    await supabase
+      .from('users')
+      .update({
+        password_hash: newHashedPassword,
+        reset_token_hash: null,
+        reset_token_expires_at: null,
+        updated_at: new Date().toISOString()
+      })
+      .eq('id', user.id);
+
+    return sendResponse(res, 200, true, 'Password reset successful! You can now log in with your new password.');
+
+  } catch (error) {
+    console.error('[RESET PASSWORD EXCEPTION]:', error);
+    return sendResponse(res, 500, false, 'Server Exception while executing password reset');
+  }
+});
+
+// ------------------------------------------------------------------------------
+// END OF CHUNK 2/5
+// ==============================================================================
+// ==============================================================================
+// FILE: app.js
+// CHUNK: 3 / 5 (Core Data CRUD Endpoints, Filtering, Pagination & Resource Management)
+// ==============================================================================
+
+// ------------------------------------------------------------------------------
+// 7. RESOURCE CRUD API ENDPOINTS (DATA MANAGEMENT ENGINE)
+// ------------------------------------------------------------------------------
+
+/**
+ * @route   GET /api/v1/resources
+ * @desc    Fetch paginated list of resources with searching, sorting & filtering
+ * @access  Public / Optional Auth
+ */
+app.get('/api/v1/resources', optionalAuth, async (req, res) => {
+  try {
+    const {
+      page = 1,
+      limit = 10,
+      search = '',
+      category,
+      status,
+      sort_by = 'created_at',
+      sort_order = 'desc',
+      min_price,
+      max_price
+    } = req.query;
+
+    const pageNum = Math.max(1, parseInt(page, 10) || 1);
+    const limitNum = Math.min(100, Math.max(1, parseInt(limit, 10) || 10));
+    const offset = (pageNum - 1) * limitNum;
+
+    // Start building query with total count
+    let query = supabase
+      .from('resources')
+      .select('*', { count: 'exact' });
+
+    // Apply status filter (Unauthenticated users only see active/published records)
+    if (!req.user || req.user.role !== 'admin') {
+      query = query.eq('is_published', true);
+    } else if (status) {
+      query = query.eq('status', status);
+    }
+
+    // Apply Search Filter across title and description
+    if (search.trim() !== '') {
+      const searchTerm = `%${search.trim()}%`;
+      query = query.or(`title.ilike.${searchTerm},description.ilike.${searchTerm}`);
+    }
+
+    // Category Filter
+    if (category) {
+      query = query.eq('category', category);
+    }
+
+    // Numeric Range Filters
+    if (min_price !== undefined && !isNaN(parseFloat(min_price))) {
+      query = query.gte('price', parseFloat(min_price));
+    }
+    if (max_price !== undefined && !isNaN(parseFloat(max_price))) {
+      query = query.lte('price', parseFloat(max_price));
+    }
+
+    // Sorting Logic
+    const validSortFields = ['created_at', 'updated_at', 'title', 'price', 'views_count'];
+    const selectedSortField = validSortFields.includes(sort_by) ? sort_by : 'created_at';
+    const isAscending = String(sort_order).toLowerCase() === 'asc';
+
+    query = query
+      .order(selectedSortField, { ascending: isAscending })
+      .range(offset, offset + limitNum - 1);
+
+    const { data: resources, count, error } = await query;
+
+    if (error) {
+      console.error('[FETCH RESOURCES DB ERROR]:', error);
+      return sendResponse(res, 500, false, 'Failed to fetch resource records from database');
+    }
+
+    const paginationMeta = getPaginationMeta(pageNum, limitNum, count || 0);
+
+    return sendResponse(
+      res,
+      200,
+      true,
+      'Resources retrieved successfully',
+      resources,
+      paginationMeta
+    );
+  } catch (error) {
+    console.error('[FETCH RESOURCES EXCEPTION]:', error);
+    return sendResponse(res, 500, false, 'Server Exception occurred while retrieving resources');
+  }
+});
+
+/**
+ * @route   GET /api/v1/resources/:id
+ * @desc    Fetch single resource by ID and increment view count
+ * @access  Public
+ */
+app.get('/api/v1/resources/:id', async (req, res) => {
+  try {
+    const { id } = req.params;
+
+    if (!id) {
+      return sendResponse(res, 400, false, 'Validation Error: Resource ID parameter required');
+    }
+
+    // Fetch primary resource record
+    const { data: resource, error } = await supabase
+      .from('resources')
+      .select('*, created_by_user:users(id, username, full_name, avatar_url)')
+      .eq('id', id)
+      .single();
+
+    if (error || !resource) {
+      return sendResponse(res, 404, false, 'Resource not found or has been removed');
+    }
+
+    // Asynchronously increment view counter
+    supabase
+      .from('resources')
+      .update({ views_count: (resource.views_count || 0) + 1 })
+      .eq('id', id)
+      .then(({ error: viewErr }) => {
+        if (viewErr) console.warn(`[VIEW COUNT ERR] ID: ${id}`, viewErr);
+      });
+
+    return sendResponse(res, 200, true, 'Resource detail fetched successfully', resource);
+  } catch (error) {
+    console.error('[FETCH SINGLE RESOURCE EXCEPTION]:', error);
+    return sendResponse(res, 500, false, 'Server Exception fetching resource details');
+  }
+});
+
+/**
+ * @route   POST /api/v1/resources
+ * @desc    Create a new resource item
+ * @access  Private (Authenticated Users)
+ */
+app.post('/api/v1/resources', authenticateToken, async (req, res) => {
+  try {
+    const {
+      title,
+      description,
+      category,
+      price = 0,
+      tags = [],
+      metadata = {},
+      is_published = true
+    } = req.body;
+
+    // Field Validations
+    if (!title || !category) {
+      return sendResponse(res, 400, false, 'Validation Error: Title and Category are required fields');
+    }
+
+    const newResourcePayload = {
+      title: title.trim(),
+      slug: title.toLowerCase().trim().replace(/[^a-z0-9]+/g, '-').replace(/(^-|-$)+/g, ''),
+      description: description ? description.trim() : '',
+      category: category.trim(),
+      price: parseFloat(price) || 0,
+      tags: Array.isArray(tags) ? tags : [],
+      metadata: typeof metadata === 'object' ? metadata : {},
+      is_published: Boolean(is_published),
+      views_count: 0,
+      created_by: req.user.id,
+      created_at: new Date().toISOString(),
+      updated_at: new Date().toISOString()
+    };
+
+    const { data: insertedResource, error } = await supabase
+      .from('resources')
+      .insert([newResourcePayload])
+      .select()
+      .single();
+
+    if (error) {
+      console.error('[CREATE RESOURCE DB ERROR]:', error);
+      return sendResponse(res, 500, false, 'Failed to save resource record in database');
+    }
+
+    return sendResponse(res, 201, true, 'Resource item successfully created', insertedResource);
+  } catch (error) {
+    console.error('[CREATE RESOURCE EXCEPTION]:', error);
+    return sendResponse(res, 500, false, 'Server Exception during resource creation');
+  }
+});
+
+/**
+ * @route   PUT /api/v1/resources/:id
+ * @desc    Update an existing resource by ID
+ * @access  Private (Owner or Admin)
+ */
+app.put('/api/v1/resources/:id', authenticateToken, async (req, res) => {
+  try {
+    const { id } = req.params;
+    const { title, description, category, price, tags, metadata, is_published } = req.body;
+
+    // Check ownership or admin status
+    const { data: existingResource, error: checkError } = await supabase
+      .from('resources')
+      .select('id, created_by')
+      .eq('id', id)
+      .single();
+
+    if (checkError || !existingResource) {
+      return sendResponse(res, 404, false, 'Resource item not found for update');
+    }
+
+    if (existingResource.created_by !== req.user.id && req.user.role !== 'admin') {
+      return sendResponse(res, 403, false, 'Forbidden: You do not have permission to edit this resource');
+    }
+
+    const updatePayload = {
+      updated_at: new Date().toISOString()
+    };
+
+    if (title !== undefined) {
+      updatePayload.title = title.trim();
+      updatePayload.slug = title.toLowerCase().trim().replace(/[^a-z0-9]+/g, '-').replace(/(^-|-$)+/g, '');
+    }
+    if (description !== undefined) updatePayload.description = description.trim();
+    if (category !== undefined) updatePayload.category = category.trim();
+    if (price !== undefined) updatePayload.price = parseFloat(price) || 0;
+    if (tags !== undefined) updatePayload.tags = Array.isArray(tags) ? tags : [];
+    if (metadata !== undefined) updatePayload.metadata = metadata;
+    if (is_published !== undefined) updatePayload.is_published = Boolean(is_published);
+
+    const { data: updatedResource, error: updateError } = await supabase
+      .from('resources')
+      .update(updatePayload)
+      .eq('id', id)
+      .select()
+      .single();
+
+    if (updateError) {
+      console.error('[UPDATE RESOURCE DB ERROR]:', updateError);
+      return sendResponse(res, 500, false, 'Failed to update resource in database');
+    }
+
+    return sendResponse(res, 200, true, 'Resource item updated successfully', updatedResource);
+  } catch (error) {
+    console.error('[UPDATE RESOURCE EXCEPTION]:', error);
+    return sendResponse(res, 500, false, 'Server Exception occurred during resource update');
+  }
+});
+
+/**
+ * @route   DELETE /api/v1/resources/:id
+ * @desc    Delete a resource record
+ * @access  Private (Owner or Admin)
+ */
+app.delete('/api/v1/resources/:id', authenticateToken, async (req, res) => {
+  try {
+    const { id } = req.params;
+
+    const { data: existingResource, error: checkError } = await supabase
+      .from('resources')
+      .select('id, created_by')
+      .eq('id', id)
+      .single();
+
+    if (checkError || !existingResource) {
+      return sendResponse(res, 404, false, 'Resource item not found for deletion');
+    }
+
+    if (existingResource.created_by !== req.user.id && req.user.role !== 'admin') {
+      return sendResponse(res, 403, false, 'Forbidden: You do not have permission to delete this resource');
+    }
+
+    const { error: deleteError } = await supabase
+      .from('resources')
+      .delete()
+      .eq('id', id);
+
+    if (deleteError) {
+      console.error('[DELETE RESOURCE DB ERROR]:', deleteError);
+      return sendResponse(res, 500, false, 'Failed to delete resource record from database');
+    }
+
+    return sendResponse(res, 200, true, `Resource ${id} deleted successfully`);
+  } catch (error) {
+    console.error('[DELETE RESOURCE EXCEPTION]:', error);
+    return sendResponse(res, 500, false, 'Server Exception occurred while deleting resource');
+  }
+});
+
+// ------------------------------------------------------------------------------
+// 8. ADMIN DASHBOARD & USER MANAGEMENT ENDPOINTS
+// ------------------------------------------------------------------------------
+
+/**
+ * @route   GET /api/v1/admin/users
+ * @desc    Fetch list of all users with system management metadata
+ * @access  Private (Admin Only)
+ */
+app.get('/api/v1/admin/users', authenticateToken, authorizeRoles('admin'), async (req, res) => {
+  try {
+    const { page = 1, limit = 20, search = '', role, status } = req.query;
+
+    const pageNum = Math.max(1, parseInt(page, 10) || 1);
+    const limitNum = Math.min(100, Math.max(1, parseInt(limit, 10) || 20));
+    const offset = (pageNum - 1) * limitNum;
+
+    let query = supabase
+      .from('users')
+      .select('id, username, email, full_name, role, is_active, last_login_at, created_at', { count: 'exact' });
+
+    if (search.trim() !== '') {
+      const searchTerm = `%${search.trim()}%`;
+      query = query.or(`username.ilike.${searchTerm},email.ilike.${searchTerm},full_name.ilike.${searchTerm}`);
+    }
+
+    if (role) query = query.eq('role', role);
+    if (status !== undefined) query = query.eq('is_active', status === 'active');
+
+    query = query
+      .order('created_at', { ascending: false })
+      .range(offset, offset + limitNum - 1);
+
+    const { data: users, count, error } = await query;
+
+    if (error) {
+      console.error('[ADMIN FETCH USERS DB ERROR]:', error);
+      return sendResponse(res, 500, false, 'Failed to retrieve user list');
+    }
+
+    return sendResponse(
+      res,
+      200,
+      true,
+      'User records retrieved successfully',
+      users,
+      getPaginationMeta(pageNum, limitNum, count || 0)
+    );
+  } catch (error) {
+    console.error('[ADMIN FETCH USERS EXCEPTION]:', error);
+    return sendResponse(res, 500, false, 'Server Exception processing admin user list request');
+  }
+});
+
+/**
+ * @route   PATCH /api/v1/admin/users/:id/status
+ * @desc    Toggle user active/suspended state or role update
+ * @access  Private (Admin Only)
+ */
+app.patch('/api/v1/admin/users/:id/status', authenticateToken, authorizeRoles('admin'), async (req, res) => {
+  try {
+    const { id } = req.params;
+    const { is_active, role } = req.body;
+
+    if (id === req.user.id) {
+      return sendResponse(res, 400, false, 'Operation Blocked: You cannot modify your own administrative account status');
+    }
+
+    const updatePayload = { updated_at: new Date().toISOString() };
+    if (is_active !== undefined) updatePayload.is_active = Boolean(is_active);
+    if (role && ['user', 'admin', 'moderator'].includes(role)) updatePayload.role = role;
+
+    const { data: updatedUser, error } = await supabase
+      .from('users')
+      .update(updatePayload)
+      .eq('id', id)
+      .select('id, username, email, role, is_active, updated_at')
+      .single();
+
+    if (error) {
+      console.error('[ADMIN UPDATE USER STATUS ERROR]:', error);
+      return sendResponse(res, 500, false, 'Failed to update user account settings');
+    }
+
+    return sendResponse(res, 200, true, 'User account status updated successfully', updatedUser);
+  } catch (error) {
+    console.error('[ADMIN UPDATE USER STATUS EXCEPTION]:', error);
+    return sendResponse(res, 500, false, 'Server Exception executing admin status update');
+  }
+});
+
+// ------------------------------------------------------------------------------
+// END OF CHUNK 3/5
+// ==============================================================================
+// ==============================================================================
+// FILE: app.js
+// CHUNK: 4 / 5 (PDF Voucher Engine, Batch Processing & System Export Utilities)
+// ==============================================================================
+
+// ------------------------------------------------------------------------------
+// 9. VOUCHER & PDF GENERATION ENGINE
+// ------------------------------------------------------------------------------
+
+/**
+ * Helper: Helper function to generate PDF document buffers for Vouchers
+ * @param {Object} voucherData - Detailed data required to assemble voucher document
+ * @returns {Promise<Buffer>} PDF Buffer stream
+ */
+function createVoucherPDFBuffer(voucherData) {
+  return new Promise((resolve, reject) => {
+    try {
+      const doc = new PDFDocument({ size: 'A4', margin: 40 });
+      const buffers = [];
+
+      doc.on('data', (chunk) => buffers.push(chunk));
+      doc.on('end', () => resolve(Buffer.concat(buffers)));
+      doc.on('error', (err) => reject(err));
+
+      // Header Branding Section
+      doc
+        .fillColor('#1E293B')
+        .fontSize(22)
+        .text(voucherData.company_name || 'OFFICIAL VOUCHER', 40, 40, { align: 'left' })
+        .fontSize(10)
+        .fillColor('#64748B')
+        .text(`Voucher Ref: ${voucherData.voucher_code}`, 40, 68, { align: 'left' })
+        .text(`Issued Date: ${new Date(voucherData.created_at || Date.now()).toLocaleDateString()}`, 40, 82, { align: 'left' });
+
+      // Horizontal Divider Line
+      doc
+        .moveTo(40, 105)
+        .lineTo(555, 105)
+        .strokeColor('#CBD5E1')
+        .lineWidth(1)
+        .stroke();
+
+      // Recipient & Details Box
+      doc
+        .rect(40, 120, 515, 90)
+        .fillAndStroke('#F8FAFC', '#E2E8F0');
+
+      doc
+        .fillColor('#334155')
+        .fontSize(12)
+        .text('VOUCHER DETAILS', 55, 132)
+        .fontSize(10)
+        .fillColor('#475569')
+        .text(`Customer Name: ${voucherData.customer_name || 'N/A'}`, 55, 152)
+        .text(`Customer Email: ${voucherData.customer_email || 'N/A'}`, 55, 168)
+        .text(`Status: ${(voucherData.status || 'ACTIVE').toUpperCase()}`, 320, 152)
+        .text(`Expiry Date: ${voucherData.expiry_date ? new Date(voucherData.expiry_date).toLocaleDateString() : 'No Expiry'}`, 320, 168);
+
+      // Main Items Table Header
+      let currentY = 230;
+      doc
+        .rect(40, currentY, 515, 25)
+        .fill('#0F172A');
+
+      doc
+        .fillColor('#FFFFFF')
+        .fontSize(10)
+        .text('Item / Description', 50, currentY + 7)
+        .text('Qty', 350, currentY + 7, { width: 50, align: 'center' })
+        .text('Amount', 420, currentY + 7, { width: 120, align: 'right' });
+
+      currentY += 25;
+
+      // Items Rendering Loop
+      const items = Array.isArray(voucherData.items) ? voucherData.items : [];
+      let totalAmount = 0;
+
+      items.forEach((item, index) => {
+        const itemPrice = parseFloat(item.price || 0);
+        const itemQty = parseInt(item.quantity || 1, 10);
+        const lineTotal = itemPrice * itemQty;
+        totalAmount += lineTotal;
+
+        const rowBg = index % 2 === 0 ? '#FFFFFF' : '#F1F5F9';
+        doc.rect(40, currentY, 515, 22).fill(rowBg);
+
+        doc
+          .fillColor('#1E293B')
+          .fontSize(9)
+          .text(item.title || 'Standard Service', 50, currentY + 6, { width: 280, height: 15, ellipsis: true })
+          .text(String(itemQty), 350, currentY + 6, { width: 50, align: 'center' })
+          .text(`$${lineTotal.toFixed(2)}`, 420, currentY + 6, { width: 120, align: 'right' });
+
+        currentY += 22;
+      });
+
+      // Total Summary Box
+      currentY += 10;
+      doc
+        .moveTo(40, currentY)
+        .lineTo(555, currentY)
+        .strokeColor('#0F172A')
+        .lineWidth(1.5)
+        .stroke();
+
+      currentY += 10;
+      doc
+        .fillColor('#0F172A')
+        .fontSize(12)
+        .text('Grand Total:', 320, currentY, { width: 100, align: 'left' })
+        .text(`$${totalAmount.toFixed(2)}`, 420, currentY, { width: 120, align: 'right' });
+
+      // Footer Terms
+      doc
+        .fontSize(8)
+        .fillColor('#94A3B8')
+        .text('Terms & Conditions: This voucher is non-transferable and must be presented upon redemption.', 40, 750, { align: 'center', width: 515 })
+        .text('Generated via Automated PDF Engine - All Rights Reserved.', 40, 762, { align: 'center', width: 515 });
+
+      doc.end();
+    } catch (err) {
+      reject(err);
+    }
+  });
 }
 
-// ==========================================
-// 11. TOAST NOTIFICATIONS
-// ==========================================
-function showToast(message, type = 'info') {
-  const container = document.getElementById('toastContainer');
-  if (!container) return;
+/**
+ * @route   POST /api/v1/vouchers/generate
+ * @desc    Generate a new digital voucher record & produce PDF download stream
+ * @access  Private
+ */
+app.post('/api/v1/vouchers/generate', authenticateToken, async (req, res) => {
+  try {
+    const { customer_name, customer_email, items, expiry_days = 30 } = req.body;
 
-  const icons = {
-    success: 'fa-circle-check text-emerald-500',
-    error: 'fa-circle-xmark text-red-500',
-    warning: 'fa-triangle-exclamation text-amber-500',
-    info: 'fa-circle-info text-blue-500'
+    if (!customer_name || !items || !Array.isArray(items) || items.length === 0) {
+      return sendResponse(res, 400, false, 'Validation Error: Customer name and at least 1 item required');
+    }
+
+    const voucherCode = `VCH-${Date.now().toString(36).toUpperCase()}-${Math.floor(1000 + Math.random() * 9000)}`;
+    const expiryDate = new Date();
+    expiryDate.setDate(expiryDate.getDate() + parseInt(expiry_days, 10));
+
+    const voucherRecord = {
+      voucher_code: voucherCode,
+      created_by: req.user.id,
+      customer_name: customer_name.trim(),
+      customer_email: customer_email ? customer_email.trim() : null,
+      items: items,
+      status: 'active',
+      expiry_date: expiryDate.toISOString(),
+      created_at: new Date().toISOString()
+    };
+
+    // Save metadata in Supabase
+    const { data: dbVoucher, error: dbError } = await supabase
+      .from('vouchers')
+      .insert([voucherRecord])
+      .select()
+      .single();
+
+    if (dbError) {
+      console.error('[VOUCHER GENERATE DB ERROR]:', dbError);
+      return sendResponse(res, 500, false, 'Failed to log voucher record in database');
+    }
+
+    // Generate PDF document in buffer stream
+    const pdfBuffer = await createVoucherPDFBuffer({
+      ...dbVoucher,
+      company_name: process.env.APP_NAME || 'SYSTEM ENTERPRISE'
+    });
+
+    res.setHeader('Content-Type', 'application/pdf');
+    res.setHeader('Content-Disposition', `attachment; filename="Voucher_${voucherCode}.pdf"`);
+    res.setHeader('Content-Length', pdfBuffer.length);
+
+    return res.status(200).send(pdfBuffer);
+  } catch (error) {
+    console.error('[GENERATE VOUCHER EXCEPTION]:', error);
+    return sendResponse(res, 500, false, 'Server Exception occurred while generating PDF voucher');
+  }
+});
+
+/**
+ * @route   GET /api/v1/vouchers/:code/download
+ * @desc    Download PDF version of existing voucher code
+ * @access  Public / Token Protected
+ */
+app.get('/api/v1/vouchers/:code/download', async (req, res) => {
+  try {
+    const { code } = req.params;
+
+    const { data: voucher, error } = await supabase
+      .from('vouchers')
+      .select('*')
+      .eq('voucher_code', code)
+      .single();
+
+    if (error || !voucher) {
+      return sendResponse(res, 404, false, 'Voucher code invalid or expired');
+    }
+
+    const pdfBuffer = await createVoucherPDFBuffer({
+      ...voucher,
+      company_name: process.env.APP_NAME || 'SYSTEM ENTERPRISE'
+    });
+
+    res.setHeader('Content-Type', 'application/pdf');
+    res.setHeader('Content-Disposition', `inline; filename="Voucher_${voucher.voucher_code}.pdf"`);
+    return res.status(200).send(pdfBuffer);
+  } catch (error) {
+    console.error('[DOWNLOAD VOUCHER EXCEPTION]:', error);
+    return sendResponse(res, 500, false, 'Failed to output voucher PDF file');
+  }
+});
+
+// ------------------------------------------------------------------------------
+// 10. SYSTEM DATA EXPORT & BULK BATCH UTILITIES
+// ------------------------------------------------------------------------------
+
+/**
+ * @route   GET /api/v1/export/csv
+ * @desc    Export system data records in formatted CSV file format
+ * @access  Private (Admin Only)
+ */
+app.get('/api/v1/export/csv', authenticateToken, authorizeRoles('admin'), async (req, res) => {
+  try {
+    const { table = 'resources' } = req.query;
+    const allowedTables = ['resources', 'vouchers', 'audit_logs'];
+
+    if (!allowedTables.includes(table)) {
+      return sendResponse(res, 400, false, 'Validation Error: Invalid table specified for CSV export');
+    }
+
+    const { data: records, error } = await supabase
+      .from(table)
+      .select('*')
+      .limit(1000);
+
+    if (error || !records || records.length === 0) {
+      return sendResponse(res, 404, false, 'No data available to construct export file');
+    }
+
+    // Extract Headers dynamically
+    const headers = Object.keys(records[0]);
+    const csvRows = [];
+    csvRows.push(headers.join(','));
+
+    // Process rows with proper string escaping
+    records.forEach((row) => {
+      const values = headers.map((header) => {
+        const val = row[header];
+        if (val === null || val === undefined) return '""';
+        if (typeof val === 'object') return `"${JSON.stringify(val).replace(/"/g, '""')}"`;
+        return `"${String(val).replace(/"/g, '""')}"`;
+      });
+      csvRows.push(values.join(','));
+    });
+
+    const csvContent = csvRows.join('\n');
+
+    res.setHeader('Content-Type', 'text/csv');
+    res.setHeader('Content-Disposition', `attachment; filename="export_${table}_${Date.now()}.csv"`);
+    return res.status(200).send(csvContent);
+  } catch (error) {
+    console.error('[EXPORT CSV EXCEPTION]:', error);
+    return sendResponse(res, 500, false, 'Server Exception executing CSV data dump');
+  }
+});
+
+// ------------------------------------------------------------------------------
+// END OF CHUNK 4/5
+// ==============================================================================
+// ==============================================================================
+// FILE: app.js
+// CHUNK: 5 / 5 (Error Handling, 404 Route Catcher, Graceful Shutdown & Server Initialization)
+// ==============================================================================
+
+// ------------------------------------------------------------------------------
+// 11. UNHANDLED ROUTE CATCHER (404 HANDLER)
+// ------------------------------------------------------------------------------
+
+/**
+ * Catch-all middleware for non-existent API endpoints and web routes
+ */
+app.use((req, res, next) => {
+  const notFoundError = new Error(`Resource not found - ${req.originalUrl}`);
+  res.status(404);
+  
+  if (req.accepts('json') || req.path.startsWith('/api/')) {
+    return sendResponse(res, 404, false, `Endpoint Route ${req.originalUrl} does not exist on this server`);
+  }
+
+  return res.type('txt').send(`404 Not Found: The requested resource '${req.originalUrl}' could not be located.`);
+});
+
+// ------------------------------------------------------------------------------
+// 12. GLOBAL ERROR HANDLING MIDDLEWARE
+// ------------------------------------------------------------------------------
+
+/**
+ * Global application error interceptor middleware
+ */
+app.use((err, req, res, next) => {
+  const statusCode = res.statusCode !== 200 ? res.statusCode : 500;
+  const isProduction = process.env.NODE_ENV === 'production';
+
+  console.error('======================================================================');
+  console.error(`[GLOBAL ERROR INTERCEPTOR] Timestamp: ${new Date().toISOString()}`);
+  console.error(`[REQUEST]: ${req.method} ${req.originalUrl} | IP: ${req.ip}`);
+  console.error(`[MESSAGE]: ${err.message}`);
+  if (!isProduction) {
+    console.error(`[STACK TRACE]:\n${err.stack}`);
+  }
+  console.error('======================================================================');
+
+  // Handle specific Syntax Errors (e.g. malformed JSON payloads)
+  if (err instanceof SyntaxError && err.status === 400 && 'body' in err) {
+    return sendResponse(res, 400, false, 'Invalid JSON payload structure provided in request body');
+  }
+
+  // Handle Multer upload errors
+  if (err.code === 'LIMIT_FILE_SIZE') {
+    return sendResponse(res, 400, false, 'Payload Error: Uploaded file exceeds allowed size limits');
+  }
+
+  const responsePayload = {
+    error_type: err.name || 'InternalServerError',
+    ...(isProduction ? {} : { stack: err.stack })
   };
 
-  const bgColors = {
-    success: 'border-emerald-500',
-    error: 'border-red-500',
-    warning: 'border-amber-500',
-    info: 'border-blue-500'
-  };
+  return sendResponse(
+    res,
+    statusCode,
+    false,
+    err.message || 'An unexpected internal server error occurred',
+    responsePayload
+  );
+});
 
-  const toast = document.createElement('div');
-  toast.className = `pointer-events-auto bg-slate-900 text-white text-xs font-semibold px-4 py-3 rounded-lg shadow-xl border-l-4 ${bgColors[type] || bgColors.info} flex items-center space-x-3 transition-all duration-300 transform translate-y-2 opacity-0`;
-  toast.innerHTML = `
-    <i class="fa-solid ${icons[type] || icons.info} text-base"></i>
-    <span>${message}</span>
-  `;
+// ------------------------------------------------------------------------------
+// 13. SERVER LISTENERS & GRACEFUL SHUTDOWN LOGIC
+// ------------------------------------------------------------------------------
 
-  container.appendChild(toast);
+const PORT = process.env.PORT || 5000;
+const HOST = process.env.HOST || '0.0.0.0';
 
-  requestAnimationFrame(() => {
-    toast.classList.remove('translate-y-2', 'opacity-0');
+/**
+ * Initialize HTTP Server Instance
+ */
+const server = app.listen(PORT, HOST, () => {
+  console.log('----------------------------------------------------------------------');
+  console.log(`🚀 [SERVER ONLINE] ${process.env.APP_NAME || 'Node.js Express Engine'}`);
+  console.log(`🌐 Network URL: http://${HOST}:${PORT}`);
+  console.log(`⚙️  Environment: ${process.env.NODE_ENV || 'development'}`);
+  console.log(`📅 Timestamp:   ${new Date().toISOString()}`);
+  console.log('----------------------------------------------------------------------');
+});
+
+/**
+ * Handle Unhandled Promise Rejections
+ */
+process.on('unhandledRejection', (reason, promise) => {
+  console.error('💥 [CRITICAL] Unhandled Promise Rejection detected:');
+  console.error('Reason:', reason);
+  // Log event without killing server instantly in production
+});
+
+/**
+ * Handle Uncaught Exceptions
+ */
+process.on('uncaughtException', (error) => {
+  console.error('💥 [CRITICAL] Uncaught Exception thrown:');
+  console.error(error);
+  
+  // Perform graceful exit on critical exception
+  gracefulShutdown('UNCAUGHT_EXCEPTION', 1);
+});
+
+/**
+ * Perform Graceful Shutdown
+ * @param {string} signal - Trigger signal identifier
+ * @param {number} code - Exit code
+ */
+function gracefulShutdown(signal, code = 0) {
+  console.log(`\n⚠️  [SHUTDOWN] Received signal: ${signal}. Closing HTTP connections...`);
+
+  server.close(() => {
+    console.log('✅ [SHUTDOWN] HTTP server closed cleanly. Database connections terminated.');
+    process.exit(code);
   });
 
+  // Force close after 10 seconds timeout
   setTimeout(() => {
-    toast.classList.add('opacity-0', 'translate-y-2');
-    setTimeout(() => {
-      if (toast.parentNode) toast.parentNode.removeChild(toast);
-    }, 300);
-  }, 4000);
+    console.error('❌ [SHUTDOWN] Forcing server termination (Timeout reached)');
+    process.exit(1);
+  }, 10000);
 }
 
-// ==========================================
-// 12. DRAWER CONTROL & PDF DOWNLOAD
-// ==========================================
-async function openSavedVouchersDrawer() {
-  const drawer = document.getElementById('savedVouchersDrawer');
-  const overlay = document.getElementById('drawerOverlay');
-  if (!drawer || !overlay) return;
+// Process Signals Interceptors
+process.on('SIGTERM', () => gracefulShutdown('SIGTERM', 0));
+process.on('SIGINT', () => gracefulShutdown('SIGINT', 0));
 
-  drawer.classList.remove('hidden');
-  overlay.classList.remove('hidden');
+// Export app instance for integration tests
+module.exports = app;
 
-  setTimeout(() => drawer.classList.remove('translate-x-full'), 20);
-  await fetchSavedVouchers();
-}
-
-function closeSavedVouchersDrawer() {
-  const drawer = document.getElementById('savedVouchersDrawer');
-  const overlay = document.getElementById('drawerOverlay');
-  if (!drawer || !overlay) return;
-
-  drawer.classList.add('translate-x-full');
-  setTimeout(() => {
-    drawer.classList.add('hidden');
-    overlay.classList.add('hidden');
-  }, 300);
-}
-
-function renderDrawerVouchers(vouchers) {
-  const listContainer = document.getElementById('drawerVouchersList');
-  const badge = document.getElementById('savedVoucherBadge');
-
-  if (badge) badge.innerText = (vouchers || []).length;
-  if (!listContainer) return;
-
-  if (!vouchers || vouchers.length === 0) {
-    listContainer.innerHTML = `
-      <div class="text-center text-slate-400 py-12">
-        <i class="fa-solid fa-folder-open text-3xl mb-2"></i>
-        <p class="text-xs font-semibold">No saved vouchers found</p>
-      </div>`;
-    return;
-  }
-
-  const user = safeGetSession();
-  const isAuthorizedToApprove = user && (user.role === 'admin' || user.role === 'staff_approved');
-
-  listContainer.innerHTML = vouchers.map(v => {
-    const status = v.status || 'NOT APPROVED';
-    const statusBadgeClass = status === 'APPROVED'
-      ? 'bg-emerald-50 text-emerald-700'
-      : 'bg-rose-50 text-rose-700';
-
-    let approveButton = '';
-    if (isAuthorizedToApprove && status === 'NOT APPROVED') {
-      approveButton = `
-        <button type="button" onclick="approveVoucherFromDrawer('${v.id}')" title="Approve Voucher" class="px-2 py-1 bg-teal-600 hover:bg-teal-700 text-white font-bold rounded flex items-center space-x-1">
-          <i class="fa-solid fa-circle-check"></i>
-          <span>Approve</span>
-        </button>
-      `;
-    }
-
-    return `
-      <div class="bg-white border border-slate-200 rounded-lg p-3 shadow-sm hover:border-emerald-300 transition-colors space-y-2">
-        <div class="flex items-center justify-between">
-          <span class="font-bold text-emerald-800 font-mono text-xs">${v.id}</span>
-          <div class="flex items-center space-x-1.5">
-            <span class="px-1.5 py-0.5 rounded text-[9px] font-bold ${statusBadgeClass}">${status}</span>
-            <span class="text-[10px] text-slate-400 font-semibold">${formatDateToDMY(v.voucherDate)}</span>
-          </div>
-        </div>
-        <div>
-          <p class="font-bold text-slate-900 text-xs">${v.familyHead || 'Guest Family'}</p>
-          <p class="text-[10px] text-slate-500 truncate">${v.packageName || 'Umrah Package'}</p>
-        </div>
-        <div class="flex items-center justify-between border-t border-slate-100 pt-2 text-[10px]">
-          <span class="px-2 py-0.5 bg-emerald-50 text-emerald-700 rounded font-black">${v.totalPax || 1} PAX</span>
-          <div class="flex space-x-1">
-            ${approveButton}
-            <button type="button" onclick="loadVoucherToFormFromDrawer('${v.id}')" class="px-2 py-1 bg-amber-50 text-amber-700 font-bold rounded">Edit</button>
-            <button type="button" onclick="reDownloadVoucherPDF('${v.id}')" class="px-2 py-1 bg-emerald-50 text-emerald-700 font-bold rounded">PDF</button>
-          </div>
-        </div>
-      </div>
-    `;
-  }).join('');
-}
-
-function loadVoucherToFormFromDrawer(id) {
-  loadVoucherToForm(id);
-  closeSavedVouchersDrawer();
-}
-
-async function reDownloadVoucherPDF(id) {
-  const v = (savedVouchersList || []).find(item => item.id === id);
-  if (!v) return;
-  const filename = `Voucher_${v.id}_${(v.familyHead || 'Guest').replace(/\s+/g, '_')}.pdf`;
-  showToast('Generating PDF...', 'info');
-
-  const user = safeGetSession();
-
-  try {
-    const response = await fetch('/api/generate-pdf', {
-      method: 'POST',
-      headers: { 
-        'Content-Type': 'application/json',
-        'x-user-role': user?.role || 'staff_pending',
-        'x-user-email': user?.email || 'unknown'
-      },
-      body: JSON.stringify({ voucherData: v, filename })
-    });
-    if (response.ok) {
-      const blob = await response.blob();
-      const url = window.URL.createObjectURL(blob);
-      const a = document.createElement('a');
-      a.href = url;
-      a.download = filename;
-      document.body.appendChild(a);
-      a.click();
-      document.body.removeChild(a);
-      window.URL.revokeObjectURL(url);
-      showToast('PDF downloaded successfully!', 'success');
-    } else {
-      showToast('Failed to generate PDF from server', 'error');
-    }
-  } catch (err) {
-    console.error(err);
-    showToast('Failed to download PDF', 'error');
-  }
-}
-
-async function approveVoucher(id) {
-  const user = safeGetSession();
-  if (!user) return;
-
-  showToast(`Approving voucher ${id}...`, 'info');
-
-  try {
-    const response = await fetch(`/api/vouchers/${id}/approve`, {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        'x-user-role': user.role
-      }
-    });
-
-    const result = await response.json();
-    if (result.success) {
-      showToast(`Voucher ${id} approved!`, 'success');
-      await fetchSavedVouchers();
-      await reDownloadVoucherPDF(id);
-    } else {
-      showToast(result.message || 'Failed to approve voucher', 'error');
-    }
-  } catch (err) {
-    showToast('Failed to approve voucher', 'error');
-  }
-}
-
-async function approveVoucherFromDrawer(id) {
-  await approveVoucher(id);
-}
-
-// ==========================================
-// 13. AUTHENTICATION & RBAC
-// ==========================================
-function checkAuth() {
-  const user = safeGetSession();
-  const appContainer = document.getElementById('appContainer');
-  const loginContainer = document.getElementById('loginContainer');
-
-  if (!user) {
-    if (appContainer) appContainer.classList.add('hidden');
-    if (loginContainer) loginContainer.classList.remove('hidden');
-  } else {
-    if (appContainer) appContainer.classList.remove('hidden');
-    if (loginContainer) loginContainer.classList.add('hidden');
-
-    const emailEl = document.getElementById('userProfileEmail');
-    const roleEl = document.getElementById('userProfileRole');
-    if (emailEl) emailEl.innerText = user.email || '';
-    if (roleEl) roleEl.innerText = user.role || '';
-
-    const settingsTabBtn = document.getElementById('navSettingsTab');
-    const manageUsersCard = document.getElementById('manageUsersCard');
-    if (user.role === 'admin') {
-      if (settingsTabBtn) settingsTabBtn.classList.remove('hidden');
-      if (manageUsersCard) manageUsersCard.classList.remove('hidden');
-    } else {
-      if (settingsTabBtn) settingsTabBtn.classList.add('hidden');
-      if (manageUsersCard) manageUsersCard.classList.add('hidden');
-    }
-  }
-}
-
-async function handleLogin() {
-  const emailInput = document.getElementById('loginEmail');
-  const passwordInput = document.getElementById('loginPassword');
-  if (!emailInput || !passwordInput) return;
-
-  try {
-    const response = await fetch('/api/auth/login', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ email: emailInput.value.trim(), password: passwordInput.value })
-    });
-
-    const result = await response.json();
-    if (result.success && result.user) {
-      localStorage.setItem('tvg_session', JSON.stringify(result.user));
-      showToast('Signed in successfully!', 'success');
-      checkAuth();
-      await initDashboard();
-    } else {
-      showToast(result.message || 'Invalid credentials', 'error');
-    }
-  } catch (err) {
-    showToast('Login connection failed', 'error');
-  }
-}
-
-function handleLogout() {
-  localStorage.removeItem('tvg_session');
-  checkAuth();
-}
-
-// ==========================================
-// 14. ADMIN USER MANAGEMENT
-// ==========================================
-async function fetchSystemUsers() {
-  const user = safeGetSession();
-  if (!user || user.role !== 'admin') return;
-
-  try {
-    const response = await fetch('/api/auth/users', { headers: { 'x-user-role': user.role } });
-    const result = await response.json();
-    if (result.success && Array.isArray(result.users)) {
-      renderSystemUsers(result.users);
-    }
-  } catch (err) {
-    showToast('Failed to load system users', 'error');
-  }
-}
-
-function renderSystemUsers(users) {
-  const tableBody = document.getElementById('userTableBody');
-  if (!tableBody) return;
-
-  tableBody.innerHTML = users.map(u => `
-    <tr class="hover:bg-slate-50 transition-colors">
-      <td class="py-3 px-3 font-semibold text-slate-800">${u.email}</td>
-      <td class="py-3 px-3"><span class="px-2 py-0.5 rounded text-[10px] font-bold uppercase bg-blue-100 text-blue-800">${u.role}</span></td>
-      <td class="py-3 px-3 text-center">
-        <button type="button" onclick="handleDeleteUser('${u.id}')" class="text-red-500 font-bold"><i class="fa-solid fa-user-minus"></i></button>
-      </td>
-    </tr>
-  `).join('');
-}
+// ==============================================================================
+// END OF CHUNK 5/5 (COMPLETE FILE FINISHED)
+// ==============================================================================
