@@ -91,14 +91,19 @@ app.get('/api/vouchers', async (req, res) => {
 });
 
 // 4. POST Voucher (Create or Update)
+// 4. POST Voucher (Create or Update)
 app.post('/api/vouchers', async (req, res) => {
   const formData = req.body;
   if (!formData.id) {
     return res.status(400).json({ success: false, message: 'Voucher ID is required' });
   }
 
-  const requesterRole = req.headers['x-user-role'] || 'staff_pending';
-  const requesterEmail = req.headers['x-user-email'] || 'unknown';
+  // Case-insensitive role and headers extraction
+  const rawRole = req.headers['x-user-role'] || formData.createdByRole || 'staff_pending';
+  const requesterRole = rawRole.toString().toLowerCase().trim();
+  const requesterEmail = req.headers['x-user-email'] || formData.createdBy || 'unknown';
+
+  // Admin aur approved staff check
   const hasApprovalRights = (requesterRole === 'admin' || requesterRole === 'staff_approved');
 
   let status = 'NOT APPROVED';
@@ -113,20 +118,24 @@ app.post('/api/vouchers', async (req, res) => {
       .single();
 
     if (existingVoucher) {
+      // Maintain original creator details on updates
       if (existingVoucher.created_by) {
         createdBy = existingVoucher.created_by;
         if (existingVoucher.form_data && existingVoucher.form_data.createdByRole) {
           createdByRole = existingVoucher.form_data.createdByRole;
         }
       }
+      
+      // Preserve status if already approved
       if (existingVoucher.status === 'APPROVED') {
         status = 'APPROVED';
       }
     }
   } catch (e) {
-    // Keep it new if it doesn't exist
+    // New voucher entry
   }
 
+  // Force APPROVED status if requester has approval rights
   if (hasApprovalRights) {
     status = 'APPROVED';
   }
