@@ -640,10 +640,16 @@ function buildSelfContainedPdfHtml(data, agencySettings, qrDataUrl, baseUrl) {
 const isProduction = process.env.NODE_ENV === 'production' || process.env.VERCEL;
 
 let puppeteerCore = null;
-try {
-  puppeteerCore = require('puppeteer-core');
-} catch (e) {
-  console.warn("puppeteer-core is not loaded: ", e.message);
+async function loadPuppeteerCore() {
+  if (puppeteerCore) return puppeteerCore;
+  try {
+    const mod = await import('puppeteer-core');
+    puppeteerCore = mod.default || mod;
+    return puppeteerCore;
+  } catch (e) {
+    console.warn("puppeteer-core is not loaded: ", e.message);
+    return null;
+  }
 }
 
 
@@ -686,12 +692,15 @@ function getLocalChromePath() {
 app.post('/api/generate-pdf', async (req, res) => {
   let hasPuppeteer = false;
   let localPuppeteer = null;
+
+  const core = await loadPuppeteerCore();
+
   try {
     const pLib = 'puppeteer';
     localPuppeteer = require(pLib);
     hasPuppeteer = true;
   } catch (_) {}
-  if (puppeteerCore) {
+  if (core) {
     hasPuppeteer = true;
   }
 
@@ -806,7 +815,7 @@ app.post('/api/generate-pdf', async (req, res) => {
       if (!process.env.BROWSERLESS_TOKEN) {
         throw new Error("BROWSERLESS_TOKEN environment variable is not set");
       }
-      browser = await puppeteerCore.connect({
+      browser = await core.connect({
         browserWSEndpoint: `wss://chrome.browserless.io?token=${process.env.BROWSERLESS_TOKEN}`
       });
     } else {
@@ -815,9 +824,9 @@ app.post('/api/generate-pdf', async (req, res) => {
           headless: "new",
           args: ['--no-sandbox', '--disable-setuid-sandbox', '--disable-dev-shm-usage']
         });
-      } else if (puppeteerCore) {
+      } else if (core) {
         const localChromePath = getLocalChromePath();
-        browser = await puppeteerCore.launch({
+        browser = await core.launch({
           headless: "new",
           args: ['--no-sandbox', '--disable-setuid-sandbox', '--disable-dev-shm-usage'],
           executablePath: localChromePath || undefined
@@ -876,28 +885,6 @@ app.post('/api/generate-pdf', async (req, res) => {
     console.error("PDF Generation Error:", error);
     return res.status(500).json({ error: "Failed to generate PDF", details: error.message });
   }
-});
-
-// TEMPORARY DEBUG ROUTE — remove after diagnosing
-app.get('/api/debug-puppeteer', (req, res) => {
-  let coreError = null;
-  let coreVersion = null;
-  try {
-    const pc = require('puppeteer-core');
-    coreVersion = pc.default ? 'loaded (default export)' : 'loaded';
-  } catch (e) {
-    coreError = { message: e.message, stack: e.stack, code: e.code };
-  }
-
-  res.json({
-    puppeteerCoreLoadedAtStartup: !!puppeteerCore,
-    freshRequireResult: coreError ? 'FAILED' : 'SUCCESS',
-    freshRequireError: coreError,
-    nodeVersion: process.version,
-    isProduction,
-    hasBrowserlessToken: !!process.env.BROWSERLESS_TOKEN,
-    env: process.env.VERCEL_ENV || 'unknown'
-  });
 });
 
 // 10. AUTHENTICATION & ACCESS CONTROL API
