@@ -1,0 +1,327 @@
+/* Custom Emerald Theme & Voucher Print Styles */
+
+@import url('https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@300;400;500;600;700;800&family=Noto+Naskh+Arabic:wght@400;600;700&display=swap');
+
+:root {
+  --primary-emerald: #047857;
+  --emerald-dark: #065f46;
+  --emerald-light: #10b981;
+  --emerald-accent: #059669;
+  --emerald-bg: #ecfdf5;
+  --gold-accent: #d97706;
+}
+
+*, *::before, *::after {
+  box-sizing: border-box;
+}
+
+html, body {
+  width: 100%;
+  min-height: 100vh;
+  margin: 0;
+  padding: 0;
+  background-color: #f8fafc;
+  color: #0f172a;
+  font-family: 'Plus Jakarta Sans', -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+  overflow-x: auto;
+}
+
+.font-arabic {
+  font-family: 'Noto Naskh Arabic', serif;
+}
+
+/* Custom Scrollbars */
+::-webkit-scrollbar {
+  width: 6px;
+  height: 6px;
+}
+
+::-webkit-scrollbar-track {
+  background: #f1f5f9;
+}
+
+::-webkit-scrollbar-thumb {
+  background: #94a3b8;
+  border-radius: 4px;
+}
+
+::-webkit-scrollbar-thumb:hover {
+  background: #64748b;
+}
+
+/* Input Focus Ring */
+input:focus, select:focus, textarea:focus {
+  outline: none;
+  border-color: #059669 !important;
+  box-shadow: 0 0 0 3px rgba(5, 150, 105, 0.15) !important;
+}
+
+/* Card Styling */
+.card-container {
+  background: #ffffff;
+  border: 1px solid #e2e8f0;
+  border-radius: 12px;
+  box-shadow: 0 1px 3px 0 rgba(0, 0, 0, 0.05);
+  transition: all 0.2s ease-in-out;
+}
+
+.card-container:hover {
+  box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.07), 0 2px 4px -1px rgba(0, 0, 0, 0.04);
+}
+
+.card-header-emerald {
+  background: linear-gradient(135deg, #047857 0%, #065f46 100%);
+  color: #ffffff;
+  border-top-left-radius: 11px;
+  border-top-right-radius: 11px;
+}
+
+/* Badge Styles */
+.badge-emerald {
+  background-color: #d1fae5;
+  color: #065f46;
+  font-weight: 600;
+  font-size: 0.75rem;
+  padding: 0.25rem 0.6rem;
+  border-radius: 9999px;
+  border: 1px solid #a7f3d0;
+}
+
+/* Dynamic Table Styles */
+.custom-table th {
+  background-color: #f1f5f9;
+  color: #334155;
+  font-weight: 600;
+  font-size: 0.75rem;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  padding: 0.65rem 0.75rem;
+  border-bottom: 2px solid #cbd5e1;
+}
+
+.custom-table td {
+  padding: 0.5rem 0.5rem;
+  vertical-align: middle;
+  border-bottom: 1px solid #f1f5f9;
+}
+
+.custom-table tr:nth-child(even) td {
+  background-color: #fafafa;
+}
+
+.custom-table tr:hover td {
+  background-color: #f0fdf4;
+}
+
+/* Voucher Template Styles (Scoped for Preview Container) */
+#voucher-preview-container {
+  width: 794px !important;
+  max-width: 100% !important;
+  padding: 15px !important;
+  box-sizing: border-box !important;
+  background: #ffffff !important;
+  margin: 0 auto !important;
+}
+
+.voucher-root-container {
+  width: 200mm !important;
+  max-width: 200mm !important;
+  margin: 5mm auto !important;
+  padding: 0 !important;
+  font-size: 8.5pt !important;
+  box-sizing: border-box !important;
+}
+
+.voucher-root-container table, .voucher-root-container div, .voucher-root-container section {
+  max-width: 100% !important;
+  word-break: break-word !important;
+}
+
+.a4-voucher-page {
+  width: 210mm;
+  min-height: 297mm;
+  padding: 6mm 8mm;
+  margin: 0 auto;
+  background: #ffffff;
+  box-sizing: border-box;
+  color: #1e293b;
+  font-size: 8.5pt;
+  line-height: 1.25;
+  position: relative;
+  overflow: hidden;
+  display: flex;
+  flex-direction: column;
+  justify-content: space-between;
+}
+
+.a4-voucher-page table {
+  width: 100%;
+  table-layout: fixed;
+  border-collapse: collapse;
+}
+
+.a4-voucher-page th, .a4-voucher-page td {
+  padding: 4px 6px;
+  font-size: 8.5pt;
+  word-wrap: break-word;
+}
+
+/* Flatpickr Z-Index & Theme Overrides for Flight Schedule */
+.flatpickr-calendar {
+  z-index: 999999 !important;
+  border-radius: 8px !important;
+  box-shadow: 0 10px 25px -5px rgba(0, 0, 0, 0.2), 0 8px 10px -6px rgba(0, 0, 0, 0.1) !important;
+  border: 1px solid #a7f3d0 !important;
+  font-family: inherit !important;
+}
+
+.flatpickr-day.selected, .flatpickr-day.startRange, .flatpickr-day.endRange, 
+.flatpickr-day.selected.inRange, .flatpickr-day.startRange.inRange, 
+.flatpickr-day.endRange.inRange, .flatpickr-day.selected:focus, 
+.flatpickr-day.startRange:focus, .flatpickr-day.endRange:focus, 
+.flatpickr-day.selected:hover, .flatpickr-day.startRange:hover, 
+.flatpickr-day.endRange:hover {
+  background: #047857 !important;
+  border-color: #047857 !important;
+}
+
+.flatpickr-current-month .flatpickr-monthDropdown-months {
+  font-weight: 700 !important;
+}
+
+/* Print Specific Rules - Isolated Strictly to Printing */
+@media print {
+  @page {
+    size: A4 portrait;
+    margin: 0;
+  }
+  
+  body * {
+    visibility: hidden;
+  }
+
+  header, main, #toastContainer, .no-print, #pdfPreviewModal > div > div:first-child {
+    display: none !important;
+  }
+
+  #pdfPreviewModal, #pdfPreviewModal > div, #pdfPreviewModal > div > div, #voucher-preview-container, #voucher-preview-container * {
+    visibility: visible !important;
+  }
+
+  #pdfPreviewModal {
+    position: absolute !important;
+    left: 0 !important;
+    top: 0 !important;
+    width: 210mm !important;
+    height: 297mm !important;
+    padding: 0 !important;
+    margin: 0 !important;
+    background: #ffffff !important;
+    overflow: hidden !important;
+  }
+
+  #pdfPreviewModal > div {
+    max-width: 100% !important;
+    max-height: 100% !important;
+    box-shadow: none !important;
+    padding: 0 !important;
+    border-radius: 0 !important;
+  }
+
+  html, body {
+    width: 210mm !important;
+    height: 297mm !important;
+    max-height: 297mm !important;
+    margin: 0 !important;
+    padding: 0 !important;
+    background: #ffffff !important;
+    color: #000000 !important;
+    overflow: hidden !important;
+    -webkit-print-color-adjust: exact !important;
+    print-color-adjust: exact !important;
+  }
+
+  .a4-voucher-page {
+    width: 210mm !important;
+    height: 297mm !important;
+    max-height: 297mm !important;
+    margin: 0 !important;
+    padding: 6mm 8mm !important;
+    box-shadow: none !important;
+    border: none !important;
+    overflow: hidden !important;
+    box-sizing: border-box !important;
+    page-break-after: avoid !important;
+    page-break-before: avoid !important;
+    page-break-inside: avoid !important;
+  }
+}
+
+.watermark {
+  position: absolute !important;
+  top: 40% !important;
+  left: 20% !important;
+  transform: rotate(-35deg) !important;
+  font-size: 90px !important;
+  font-weight: 900 !important;
+  color: #e0e0e0 !important;
+  opacity: 0.12 !important;
+  z-index: -1 !important; /* behind content */
+  pointer-events: none !important;
+  user-select: none !important;
+  letter-spacing: 5px !important;
+  white-space: nowrap !important;
+}
+
+/* Login Page Custom Animations & Styles */
+@keyframes glide {
+  0% { transform: translate(0, 0) rotate(0deg); }
+  50% { transform: translate(-8px, -15px) rotate(1deg); }
+  100% { transform: translate(0, 0) rotate(0deg); }
+}
+
+@keyframes cloud-float {
+  0% { transform: translateX(0); }
+  50% { transform: translateX(20px); }
+  100% { transform: translateX(0); }
+}
+
+@keyframes pulse-emerald {
+  0% { box-shadow: 0 0 0 0 rgba(16, 185, 129, 0.4); }
+  70% { box-shadow: 0 0 0 8px rgba(16, 185, 129, 0); }
+  100% { box-shadow: 0 0 0 0 rgba(16, 185, 129, 0); }
+}
+
+.animate-glide {
+  animation: glide 10s ease-in-out infinite;
+}
+
+.animate-cloud-slow {
+  animation: cloud-float 15s ease-in-out infinite;
+}
+
+.animate-cloud-medium {
+  animation: cloud-float 10s ease-in-out infinite;
+}
+
+.animate-cloud-fast {
+  animation: cloud-float 7s ease-in-out infinite;
+}
+
+.hover-pulse:hover {
+  animation: pulse-emerald 1.5s infinite;
+}
+
+.input-focus-glow:focus {
+  border-color: #10b981 !important;
+  box-shadow: 0 0 0 4px rgba(16, 185, 129, 0.3) !important;
+}
+
+/* Spin animation for compass rose */
+@keyframes spin-slow {
+  0% { transform: rotate(0deg); }
+  100% { transform: rotate(360deg); }
+}
+.animate-spin-slow {
+  animation: spin-slow 20s linear infinite;
+}
