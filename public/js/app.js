@@ -1,14 +1,16 @@
-// --- GLOBAL STATE & CONFIGURATION ---
+// ==========================================
+// 1. GLOBAL STATE & CONFIGURATION
+// ==========================================
 let savedVouchersList = [];
 let currentAgencySettings = safeGetLocalStorage('tvg_agency_settings', {
-  agencyName: 'Travel Agency',
+  agencyName: 'Saudi Pak Group of Travels',
   phone: '',
   email: '',
   address: '',
   logoUrl: ''
 });
 
-// Flatpickr instances global references
+// Flatpickr Instances
 let voucherDatePicker = null;
 let transportDatePicker = null;
 let depDatePicker = null;
@@ -18,7 +20,9 @@ let retTimePicker = null;
 let makkahZiyaratDatePicker = null;
 let madinahZiyaratDatePicker = null;
 
-// --- SAFE HELPER FUNCTIONS ---
+// ==========================================
+// 2. HELPER FUNCTIONS & UTILITIES
+// ==========================================
 function safeGetLocalStorage(key, defaultValue) {
   try {
     const item = localStorage.getItem(key);
@@ -34,7 +38,7 @@ function safeGetSession() {
     const session = localStorage.getItem('tvg_session');
     return session ? JSON.parse(session) : null;
   } catch (e) {
-    console.error("Corrupted session data in LocalStorage", e);
+    console.error("Corrupted session data", e);
     return null;
   }
 }
@@ -52,7 +56,9 @@ function formatCreatorName(createdBy, role) {
   return `${createdBy}${roleLabel}`;
 }
 
-// --- INITIALIZATION & EVENT LISTENERS ---
+// ==========================================
+// 3. INITIALIZATION & GLOBAL EVENT BINDING
+// ==========================================
 document.addEventListener('DOMContentLoaded', async () => {
   checkAuth();
   initDatePickers();
@@ -61,7 +67,7 @@ document.addEventListener('DOMContentLoaded', async () => {
 });
 
 function bindGlobalEvents() {
-  // Logo URL & File Upload preview handler
+  // Logo URL Input & Real-time Header Preview
   const logoInput = document.getElementById('settingLogoUrl');
   if (logoInput) {
     logoInput.addEventListener('input', (e) => {
@@ -70,21 +76,42 @@ function bindGlobalEvents() {
     });
   }
 
-  // Live Preview Button
-  const previewBtn = document.getElementById('btnLivePreview') || document.getElementById('btnPreviewVoucher');
-  if (previewBtn) {
-    previewBtn.addEventListener('click', (e) => {
-      e.preventDefault();
-      openLivePreviewModal();
-    });
-  }
+  // Live Preview Modal Trigger Buttons
+  const previewBtns = [
+    document.getElementById('btnLivePreview'),
+    document.getElementById('btnPreviewVoucher'),
+    document.getElementById('btnFloatingPreview')
+  ];
+  previewBtns.forEach(btn => {
+    if (btn) {
+      btn.addEventListener('click', (e) => {
+        e.preventDefault();
+        openLivePreviewModal();
+      });
+    }
+  });
 
-  // Direct Generate & Download PDF Button
-  const downloadPdfBtn = document.getElementById('btnDownloadPdf') || document.getElementById('btnGeneratePdf');
-  if (downloadPdfBtn) {
-    downloadPdfBtn.addEventListener('click', async (e) => {
+  // Direct PDF Download Buttons
+  const downloadPdfBtns = [
+    document.getElementById('btnDownloadPdf'),
+    document.getElementById('btnGeneratePdf'),
+    document.getElementById('btnDirectPdfDownload')
+  ];
+  downloadPdfBtns.forEach(btn => {
+    if (btn) {
+      btn.addEventListener('click', async (e) => {
+        e.preventDefault();
+        await generateAndDownloadPDFFromForm();
+      });
+    }
+  });
+
+  // Save Voucher Button
+  const saveBtn = document.getElementById('btnSaveVoucher');
+  if (saveBtn) {
+    saveBtn.addEventListener('click', async (e) => {
       e.preventDefault();
-      await generateAndDownloadPDFFromForm();
+      await saveVoucher();
     });
   }
 }
@@ -100,7 +127,7 @@ function initDatePickers() {
   const dateConfig = { dateFormat: "Y-m-d", allowInput: true };
   const timeConfig = { enableTime: true, noCalendar: true, dateFormat: "H:i", time_24hr: true };
 
-  const elIds = [
+  const pickers = [
     { id: 'voucherDate', setter: (inst) => voucherDatePicker = inst, cfg: dateConfig },
     { id: 'transportDate', setter: (inst) => transportDatePicker = inst, cfg: dateConfig },
     { id: 'depDate', setter: (inst) => depDatePicker = inst, cfg: dateConfig },
@@ -111,13 +138,15 @@ function initDatePickers() {
     { id: 'madinahZiyaratDate', setter: (inst) => madinahZiyaratDatePicker = inst, cfg: dateConfig }
   ];
 
-  elIds.forEach(item => {
+  pickers.forEach(item => {
     const el = document.getElementById(item.id);
     if (el) item.setter(flatpickr(el, item.cfg));
   });
 }
 
-// --- UI / NAVIGATION TABS ---
+// ==========================================
+// 4. UI TABS & NAVIGATION CONTROL
+// ==========================================
 function switchTab(tabName) {
   const createTab = document.getElementById('tabCreateVoucher');
   const archiveTab = document.getElementById('tabSavedVouchers');
@@ -131,29 +160,31 @@ function switchTab(tabName) {
   if (archiveTab) archiveTab.classList.add('hidden');
   if (settingsTab) settingsTab.classList.add('hidden');
 
-  const inactiveNavClass = "px-4 py-2 text-xs font-bold text-slate-300 hover:bg-emerald-800 rounded-lg transition-colors flex items-center space-x-2";
-  const activeNavClass = "px-4 py-2 text-xs font-bold bg-emerald-600 text-white rounded-lg shadow transition-colors flex items-center space-x-2";
+  const inactiveClass = "px-4 py-2 text-xs font-bold text-slate-300 hover:bg-emerald-800 rounded-lg transition-colors flex items-center space-x-2";
+  const activeClass = "px-4 py-2 text-xs font-bold bg-emerald-600 text-white rounded-lg shadow transition-colors flex items-center space-x-2";
 
-  if (navCreate) navCreate.className = inactiveNavClass;
-  if (navArchive) navArchive.className = inactiveNavClass;
-  if (navSettings) navSettings.className = inactiveNavClass;
+  if (navCreate) navCreate.className = inactiveClass;
+  if (navArchive) navArchive.className = inactiveClass;
+  if (navSettings) navSettings.className = inactiveClass;
 
   if (tabName === 'create') {
     if (createTab) createTab.classList.remove('hidden');
-    if (navCreate) navCreate.className = activeNavClass;
+    if (navCreate) navCreate.className = activeClass;
   } else if (tabName === 'archive') {
     if (archiveTab) archiveTab.classList.remove('hidden');
-    if (navArchive) navArchive.className = activeNavClass;
+    if (navArchive) navArchive.className = activeClass;
     fetchSavedVouchers();
   } else if (tabName === 'settings') {
     if (settingsTab) settingsTab.classList.remove('hidden');
-    if (navSettings) navSettings.className = activeNavClass;
+    if (navSettings) navSettings.className = activeClass;
     loadAgencySettingsToForm();
     fetchSystemUsers();
   }
 }
 
-// --- DYNAMIC ROWS (PASSENGERS & HOTELS) ---
+// ==========================================
+// 5. DYNAMIC ROWS (PASSENGERS & HOTELS)
+// ==========================================
 function addPassengerRow(pData = {}) {
   const tbody = document.getElementById('passengerTableBody');
   if (!tbody) return;
@@ -162,6 +193,8 @@ function addPassengerRow(pData = {}) {
   const row = document.createElement('tr');
   row.id = rowId;
   row.className = "hover:bg-slate-50 transition-colors";
+
+  const showMofa = document.getElementById('includeMofaToggle')?.checked || false;
 
   row.innerHTML = `
     <td class="py-2 px-2">
@@ -177,10 +210,10 @@ function addPassengerRow(pData = {}) {
         <option value="Infant" ${pData.type === 'Infant' ? 'selected' : ''}>Infant</option>
       </select>
     </td>
-    <td class="py-2 px-2 mofa-field ${document.getElementById('includeMofaToggle')?.checked ? '' : 'hidden'}">
+    <td class="py-2 px-2 mofa-field ${showMofa ? '' : 'hidden'}">
       <input type="text" class="p-mofa form-input w-full text-xs font-mono rounded border-slate-300 focus:border-emerald-500 focus:ring-emerald-500" placeholder="MOFA No" value="${pData.mofaNo || ''}">
     </td>
-    <td class="py-2 px-2 mofa-field ${document.getElementById('includeMofaToggle')?.checked ? '' : 'hidden'}">
+    <td class="py-2 px-2 mofa-field ${showMofa ? '' : 'hidden'}">
       <input type="text" class="p-visa form-input w-full text-xs font-mono rounded border-slate-300 focus:border-emerald-500 focus:ring-emerald-500" placeholder="Visa No" value="${pData.visaNo || ''}">
     </td>
     <td class="py-2 px-2 text-center">
@@ -281,7 +314,9 @@ function updateTotalPaxDisplay() {
   if (displayEl) displayEl.innerText = `${total} PAX`;
 }
 
-// --- GATHER FORM DATA ---
+// ==========================================
+// 6. FORM DATA HARVESTING
+// ==========================================
 function getVoucherFormData() {
   const session = safeGetSession();
   const createdBy = session ? session.email : 'Unknown Staff';
@@ -375,23 +410,35 @@ function getVoucherFormData() {
   };
 }
 
-// --- LIVE PREVIEW & DIRECT PDF GENERATION ---
+// ==========================================
+// 7. LIVE PREVIEW MODAL & DIRECT PDF DOWNLOAD
+// ==========================================
 async function openLivePreviewModal() {
   const vData = getVoucherFormData();
   const modal = document.getElementById('pdfPreviewModal');
   const templateContainer = document.getElementById('voucher-preview-container') || document.getElementById('a4VoucherTemplate');
   
   if (!modal || !templateContainer) {
-    showToast('Preview modal structure not found in HTML', 'error');
+    showToast('Preview Modal element not found on page', 'error');
     return;
   }
 
   modal.classList.remove('hidden');
+
   if (typeof renderA4VoucherHTML === 'function') {
     const htmlContent = await renderA4VoucherHTML(vData, currentAgencySettings);
     templateContainer.innerHTML = htmlContent;
   } else {
-    templateContainer.innerHTML = `<div class="p-6 text-center font-bold">Voucher Ref: ${vData.id} - ${vData.familyHead} (${vData.totalPax} PAX)</div>`;
+    // Basic fallback preview
+    templateContainer.innerHTML = `
+      <div class="p-6 bg-white rounded shadow text-slate-800 font-sans">
+        <h2 class="text-xl font-bold border-b pb-2 text-emerald-800">Voucher Preview: ${vData.id}</h2>
+        <p class="mt-2"><strong>Family Head:</strong> ${vData.familyHead}</p>
+        <p><strong>Total PAX:</strong> ${vData.totalPax}</p>
+        <p><strong>Package:</strong> ${vData.packageName}</p>
+        <p class="mt-4 text-xs text-slate-500">Full layout template loading...</p>
+      </div>
+    `;
   }
 }
 
@@ -402,18 +449,20 @@ function closePdfPreviewModal() {
 
 async function generateAndDownloadPDFFromForm() {
   const vData = getVoucherFormData();
-  await saveVoucher(); // Pehle auto-save karein
+  await saveVoucher(); // Pehle record server / storage me save karein
   await reDownloadVoucherPDF(vData.id);
 }
 
-// --- SAVE VOUCHER ACTION ---
+// ==========================================
+// 8. SAVE VOUCHER ACTION
+// ==========================================
 async function saveVoucher() {
   const vData = getVoucherFormData();
   const session = safeGetSession();
   const userRole = session ? session.role : 'staff_pending';
   const userEmail = session ? session.email : 'unknown';
 
-  showToast('Saving voucher...', 'info');
+  showToast('Saving voucher record...', 'info');
 
   try {
     const res = await fetch('/api/vouchers', {
@@ -430,10 +479,10 @@ async function saveVoucher() {
       showToast('Voucher saved successfully!', 'success');
       await fetchSavedVouchers();
     } else {
-      showToast(result.message || 'Failed to save voucher on server', 'warning');
+      showToast(result.message || 'Failed to save voucher', 'warning');
     }
   } catch (err) {
-    console.warn("API Save failed, storing in LocalStorage: ", err);
+    console.warn("API Unavailable. Storing in LocalStorage", err);
     let localVouchers = safeGetLocalStorage('tvg_vouchers', []);
     const existingIdx = localVouchers.findIndex(v => v.id === vData.id);
     if (existingIdx >= 0) localVouchers[existingIdx] = vData;
@@ -445,7 +494,9 @@ async function saveVoucher() {
   }
 }
 
-// --- BRANDING & SETTINGS ---
+// ==========================================
+// 9. BRANDING & AGENCY SETTINGS
+// ==========================================
 async function fetchAgencySettings() {
   try {
     const res = await fetch('/api/settings');
@@ -455,7 +506,7 @@ async function fetchAgencySettings() {
       localStorage.setItem('tvg_agency_settings', JSON.stringify(result.settings));
     }
   } catch (err) {
-    console.warn("Could not fetch agency settings from API, using cached LocalStorage.");
+    console.warn("Could not fetch agency settings from API, using cached local data.");
   }
   updateHeaderBranding(currentAgencySettings);
 }
@@ -474,7 +525,7 @@ async function saveAgencySettings() {
   const userRole = session ? session.role : 'staff_pending';
 
   const updatedSettings = {
-    agencyName: document.getElementById('settingAgencyName')?.value.trim() || 'Travel Agency',
+    agencyName: document.getElementById('settingAgencyName')?.value.trim() || 'Saudi Pak Group of Travels',
     phone: document.getElementById('settingAgencyPhone')?.value.trim() || '',
     email: document.getElementById('settingAgencyEmail')?.value.trim() || '',
     address: document.getElementById('settingAgencyAddress')?.value.trim() || '',
@@ -512,14 +563,16 @@ async function saveAgencySettings() {
 function updateHeaderBranding(settings) {
   const nameEl = document.getElementById('headerAgencyName');
   const logoEl = document.getElementById('headerAgencyLogo');
-  if (nameEl) nameEl.innerText = settings.agencyName || 'Travel Agency';
+  if (nameEl) nameEl.innerText = settings.agencyName || 'Saudi Pak Group of Travels';
   if (logoEl && settings.logoUrl) {
     logoEl.src = settings.logoUrl;
     logoEl.classList.remove('hidden');
   }
 }
 
-// --- SAVED VOUCHERS ARCHIVE ---
+// ==========================================
+// 10. SAVED VOUCHERS ARCHIVE
+// ==========================================
 async function fetchSavedVouchers() {
   try {
     const res = await fetch('/api/vouchers');
@@ -664,7 +717,7 @@ function loadVoucherToForm(id) {
     }
   }
 
-  // Load Passengers
+  // Load Dynamic Passengers
   const pBody = document.getElementById('passengerTableBody');
   if (pBody) {
     pBody.innerHTML = '';
@@ -675,7 +728,7 @@ function loadVoucherToForm(id) {
     }
   }
 
-  // Load Hotels
+  // Load Dynamic Hotels
   const hBody = document.getElementById('hotelTableBody');
   if (hBody) {
     hBody.innerHTML = '';
@@ -686,7 +739,7 @@ function loadVoucherToForm(id) {
     }
   }
 
-  // Load Transport
+  // Load Transport Details
   if (v.transport) {
     if (transportDatePicker && v.transport.date) transportDatePicker.setDate(v.transport.date);
     else if (v.transport.date && document.getElementById('transportDate')) document.getElementById('transportDate').value = v.transport.date;
@@ -696,7 +749,7 @@ function loadVoucherToForm(id) {
     if (v.transport.route && document.getElementById('transportRoute')) document.getElementById('transportRoute').value = v.transport.route;
   }
 
-  // Load Flight
+  // Load Flight Details
   if (v.flight) {
     if (v.flight.departureAirline && document.getElementById('depAirline')) document.getElementById('depAirline').value = v.flight.departureAirline;
     if (v.flight.departureFlightNo && document.getElementById('depFlightNo')) document.getElementById('depFlightNo').value = v.flight.departureFlightNo;
@@ -763,7 +816,9 @@ async function deleteSavedVoucher(id) {
   await fetchSavedVouchers();
 }
 
-// --- TOAST NOTIFICATIONS SYSTEM ---
+// ==========================================
+// 11. TOAST NOTIFICATIONS
+// ==========================================
 function showToast(message, type = 'info') {
   const container = document.getElementById('toastContainer');
   if (!container) return;
@@ -803,7 +858,9 @@ function showToast(message, type = 'info') {
   }, 4000);
 }
 
-// --- SAVED VOUCHERS DRAWER FLOWS ---
+// ==========================================
+// 12. DRAWER CONTROL & PDF DOWNLOAD
+// ==========================================
 async function openSavedVouchersDrawer() {
   const drawer = document.getElementById('savedVouchersDrawer');
   const overlay = document.getElementById('drawerOverlay');
@@ -924,7 +981,7 @@ async function reDownloadVoucherPDF(id) {
       window.URL.revokeObjectURL(url);
       showToast('PDF downloaded successfully!', 'success');
     } else {
-      showToast('Failed to generate PDF from backend', 'error');
+      showToast('Failed to generate PDF from server', 'error');
     }
   } catch (err) {
     console.error(err);
@@ -964,7 +1021,9 @@ async function approveVoucherFromDrawer(id) {
   await approveVoucher(id);
 }
 
-// --- AUTHENTICATION & ACCESS CONTROL (RBAC) ---
+// ==========================================
+// 13. AUTHENTICATION & RBAC
+// ==========================================
 function checkAuth() {
   const user = safeGetSession();
   const appContainer = document.getElementById('appContainer');
@@ -1013,7 +1072,7 @@ async function handleLogin() {
       checkAuth();
       await initDashboard();
     } else {
-      showToast(result.message || 'Invalid email or password', 'error');
+      showToast(result.message || 'Invalid credentials', 'error');
     }
   } catch (err) {
     showToast('Login connection failed', 'error');
@@ -1025,7 +1084,9 @@ function handleLogout() {
   checkAuth();
 }
 
-// --- ADMIN USER MANAGEMENT ---
+// ==========================================
+// 14. ADMIN USER MANAGEMENT
+// ==========================================
 async function fetchSystemUsers() {
   const user = safeGetSession();
   if (!user || user.role !== 'admin') return;
@@ -1037,7 +1098,7 @@ async function fetchSystemUsers() {
       renderSystemUsers(result.users);
     }
   } catch (err) {
-    showToast('Failed to load users', 'error');
+    showToast('Failed to load system users', 'error');
   }
 }
 
