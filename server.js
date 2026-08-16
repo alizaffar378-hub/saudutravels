@@ -878,6 +878,28 @@ app.post('/api/generate-pdf', async (req, res) => {
   }
 });
 
+// TEMPORARY DEBUG ROUTE — remove after diagnosing
+app.get('/api/debug-puppeteer', (req, res) => {
+  let coreError = null;
+  let coreVersion = null;
+  try {
+    const pc = require('puppeteer-core');
+    coreVersion = pc.default ? 'loaded (default export)' : 'loaded';
+  } catch (e) {
+    coreError = { message: e.message, stack: e.stack, code: e.code };
+  }
+
+  res.json({
+    puppeteerCoreLoadedAtStartup: !!puppeteerCore,
+    freshRequireResult: coreError ? 'FAILED' : 'SUCCESS',
+    freshRequireError: coreError,
+    nodeVersion: process.version,
+    isProduction,
+    hasBrowserlessToken: !!process.env.BROWSERLESS_TOKEN,
+    env: process.env.VERCEL_ENV || 'unknown'
+  });
+});
+
 // 10. AUTHENTICATION & ACCESS CONTROL API
 app.post('/api/auth/login', async (req, res) => {
   const { email, password } = req.body;
