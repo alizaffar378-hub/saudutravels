@@ -1390,6 +1390,18 @@ app.get('/api/v1/export/csv', authenticateToken, authorizeRoles('admin'), async 
 /**
  * Catch-all middleware for non-existent API endpoints and web routes
  */
+// ==============================================================================
+// FILE: app.js
+// CHUNK: 5 / 5 (Error Handling, 404 Route Catcher, Graceful Shutdown & Server Initialization)
+// ==============================================================================
+
+// ------------------------------------------------------------------------------
+// 11. UNHANDLED ROUTE CATCHER (404 HANDLER)
+// ------------------------------------------------------------------------------
+
+/**
+ * Catch-all middleware for non-existent API endpoints and web routes
+ */
 app.use((req, res, next) => {
   const notFoundError = new Error(`Resource not found - ${req.originalUrl}`);
   res.status(404);
@@ -1449,16 +1461,16 @@ app.use((err, req, res, next) => {
 // 13. SERVER LISTENERS & GRACEFUL SHUTDOWN LOGIC
 // ------------------------------------------------------------------------------
 
-const PORT = process.env.PORT || 5000;
-const HOST = process.env.HOST || '0.0.0.0';
+// Note: PORT and HOST are already declared at the top of app.js (Chunk 1)
+const serverPort = process.env.PORT || (typeof PORT !== 'undefined' ? PORT : 5000);
 
 /**
  * Initialize HTTP Server Instance
  */
-const server = app.listen(PORT, HOST, () => {
+const server = app.listen(serverPort, () => {
   console.log('----------------------------------------------------------------------');
   console.log(`🚀 [SERVER ONLINE] ${process.env.APP_NAME || 'Node.js Express Engine'}`);
-  console.log(`🌐 Network URL: http://${HOST}:${PORT}`);
+  console.log(`🌐 Active Port:  ${serverPort}`);
   console.log(`⚙️  Environment: ${process.env.NODE_ENV || 'development'}`);
   console.log(`📅 Timestamp:   ${new Date().toISOString()}`);
   console.log('----------------------------------------------------------------------');
@@ -1470,7 +1482,6 @@ const server = app.listen(PORT, HOST, () => {
 process.on('unhandledRejection', (reason, promise) => {
   console.error('💥 [CRITICAL] Unhandled Promise Rejection detected:');
   console.error('Reason:', reason);
-  // Log event without killing server instantly in production
 });
 
 /**
