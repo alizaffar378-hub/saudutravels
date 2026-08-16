@@ -1203,5 +1203,5 @@ app.listen(PORT, () => {
   console.log(`=======================================================`);
   console.log(` TRAVEL VOUCHER GENERATOR SERVER RUNNING ON PORT ${PORT} `);
   console.log(` Web App URL: http://localhost:${PORT} `);
-  console.log(`=======================================================`);
+  console.log(`======================================================= `);
 });
