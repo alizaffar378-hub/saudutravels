@@ -43,13 +43,78 @@ function formatDateToDMY(dateStr) {
   if (!dateStr) return '-';
   const d = new Date(dateStr);
   if (isNaN(d.getTime())) return dateStr;
-  return d.toLocaleDateString('en-GB'); // Formats as DD/MM/YYYY
+  return d.toLocaleDateString('en-GB');
 }
 
 function formatCreatorName(createdBy, role) {
   if (!createdBy) return 'System';
   const roleLabel = role ? ` (${role})` : '';
   return `${createdBy}${roleLabel}`;
+}
+
+// --- INITIALIZATION & EVENT LISTENERS ---
+document.addEventListener('DOMContentLoaded', async () => {
+  checkAuth();
+  initDatePickers();
+  bindGlobalEvents();
+  await initDashboard();
+});
+
+function bindGlobalEvents() {
+  // Logo URL & File Upload preview handler
+  const logoInput = document.getElementById('settingLogoUrl');
+  if (logoInput) {
+    logoInput.addEventListener('input', (e) => {
+      const url = e.target.value.trim();
+      updateHeaderBranding({ ...currentAgencySettings, logoUrl: url });
+    });
+  }
+
+  // Live Preview Button
+  const previewBtn = document.getElementById('btnLivePreview') || document.getElementById('btnPreviewVoucher');
+  if (previewBtn) {
+    previewBtn.addEventListener('click', (e) => {
+      e.preventDefault();
+      openLivePreviewModal();
+    });
+  }
+
+  // Direct Generate & Download PDF Button
+  const downloadPdfBtn = document.getElementById('btnDownloadPdf') || document.getElementById('btnGeneratePdf');
+  if (downloadPdfBtn) {
+    downloadPdfBtn.addEventListener('click', async (e) => {
+      e.preventDefault();
+      await generateAndDownloadPDFFromForm();
+    });
+  }
+}
+
+async function initDashboard() {
+  await fetchAgencySettings();
+  await fetchSavedVouchers();
+}
+
+function initDatePickers() {
+  if (typeof flatpickr === 'undefined') return;
+
+  const dateConfig = { dateFormat: "Y-m-d", allowInput: true };
+  const timeConfig = { enableTime: true, noCalendar: true, dateFormat: "H:i", time_24hr: true };
+
+  const elIds = [
+    { id: 'voucherDate', setter: (inst) => voucherDatePicker = inst, cfg: dateConfig },
+    { id: 'transportDate', setter: (inst) => transportDatePicker = inst, cfg: dateConfig },
+    { id: 'depDate', setter: (inst) => depDatePicker = inst, cfg: dateConfig },
+    { id: 'depTime', setter: (inst) => depTimePicker = inst, cfg: timeConfig },
+    { id: 'retDate', setter: (inst) => retDatePicker = inst, cfg: dateConfig },
+    { id: 'retTime', setter: (inst) => retTimePicker = inst, cfg: timeConfig },
+    { id: 'makkahZiyaratDate', setter: (inst) => makkahZiyaratDatePicker = inst, cfg: dateConfig },
+    { id: 'madinahZiyaratDate', setter: (inst) => madinahZiyaratDatePicker = inst, cfg: dateConfig }
+  ];
+
+  elIds.forEach(item => {
+    const el = document.getElementById(item.id);
+    if (el) item.setter(flatpickr(el, item.cfg));
+  });
 }
 
 // --- UI / NAVIGATION TABS ---
@@ -88,49 +153,7 @@ function switchTab(tabName) {
   }
 }
 
-// --- INITIALIZATION ---
-document.addEventListener('DOMContentLoaded', async () => {
-  checkAuth();
-  initDatePickers();
-  await initDashboard();
-});
-
-async function initDashboard() {
-  await fetchAgencySettings();
-  await fetchSavedVouchers();
-}
-
-function initDatePickers() {
-  if (typeof flatpickr === 'undefined') return;
-
-  const dateConfig = { dateFormat: "Y-m-d", allowInput: true };
-  const timeConfig = { enableTime: true, noCalendar: true, dateFormat: "H:i", time_24hr: true };
-
-  const voucherDateEl = document.getElementById('voucherDate');
-  if (voucherDateEl) voucherDatePicker = flatpickr(voucherDateEl, dateConfig);
-
-  const transportDateEl = document.getElementById('transportDate');
-  if (transportDateEl) transportDatePicker = flatpickr(transportDateEl, dateConfig);
-
-  const depDateEl = document.getElementById('depDate');
-  if (depDateEl) depDatePicker = flatpickr(depDateEl, dateConfig);
-
-  const depTimeEl = document.getElementById('depTime');
-  if (depTimeEl) depTimePicker = flatpickr(depTimeEl, timeConfig);
-
-  const retDateEl = document.getElementById('retDate');
-  if (retDateEl) retDatePicker = flatpickr(retDateEl, dateConfig);
-
-  const retTimeEl = document.getElementById('retTime');
-  if (retTimeEl) retTimePicker = flatpickr(retTimeEl, timeConfig);
-
-  const makkahZiyaratDateEl = document.getElementById('makkahZiyaratDate');
-  if (makkahZiyaratDateEl) makkahZiyaratDatePicker = flatpickr(makkahZiyaratDateEl, dateConfig);
-
-  const madinahZiyaratDateEl = document.getElementById('madinahZiyaratDate');
-  if (madinahZiyaratDateEl) madinahZiyaratDatePicker = flatpickr(madinahZiyaratDateEl, dateConfig);
-}
-// --- FORM DOM HELPERS & DYNAMIC ROWS ---
+// --- DYNAMIC ROWS (PASSENGERS & HOTELS) ---
 function addPassengerRow(pData = {}) {
   const tbody = document.getElementById('passengerTableBody');
   if (!tbody) return;
@@ -230,8 +253,7 @@ function removeHotelRow(rowId) {
 
 function toggleMofaFields() {
   const isChecked = document.getElementById('includeMofaToggle')?.checked || false;
-  const mofaFields = document.querySelectorAll('.mofa-field');
-  mofaFields.forEach(field => {
+  document.querySelectorAll('.mofa-field').forEach(field => {
     if (isChecked) field.classList.remove('hidden');
     else field.classList.add('hidden');
   });
@@ -259,80 +281,7 @@ function updateTotalPaxDisplay() {
   if (displayEl) displayEl.innerText = `${total} PAX`;
 }
 
-// --- RESET FORM ---
-function resetVoucherForm() {
-  const refIdEl = document.getElementById('voucherRefId');
-  if (refIdEl) refIdEl.value = 'TVG-' + Math.floor(100000 + Math.random() * 900000);
-
-  if (voucherDatePicker) voucherDatePicker.clear();
-  else if (document.getElementById('voucherDate')) document.getElementById('voucherDate').value = '';
-
-  if (document.getElementById('familyHeadName')) document.getElementById('familyHeadName').value = '';
-  if (document.getElementById('adultsCount')) document.getElementById('adultsCount').value = 1;
-  if (document.getElementById('childrenCount')) document.getElementById('childrenCount').value = 0;
-  if (document.getElementById('infantsCount')) document.getElementById('infantsCount').value = 0;
-
-  updateTotalPaxDisplay();
-
-  const mofaToggle = document.getElementById('includeMofaToggle');
-  if (mofaToggle) {
-    mofaToggle.checked = false;
-    toggleMofaFields();
-  }
-
-  const packageSelect = document.getElementById('packageNameSelect');
-  const customInput = document.getElementById('packageNameCustom');
-  if (packageSelect) packageSelect.value = 'Economy Umrah Package';
-  if (customInput) {
-    customInput.value = '';
-    customInput.classList.add('hidden');
-  }
-
-  const pBody = document.getElementById('passengerTableBody');
-  if (pBody) {
-    pBody.innerHTML = '';
-    addPassengerRow();
-  }
-
-  const hBody = document.getElementById('hotelTableBody');
-  if (hBody) {
-    hBody.innerHTML = '';
-    addHotelRow();
-  }
-
-  // Clear Transport Inputs
-  if (transportDatePicker) transportDatePicker.clear();
-  else if (document.getElementById('transportDate')) document.getElementById('transportDate').value = '';
-  if (document.getElementById('transporterName')) document.getElementById('transporterName').value = '';
-  if (document.getElementById('vehicleType')) document.getElementById('vehicleType').value = 'GMC / SUV';
-  if (document.getElementById('transportRouteNo')) document.getElementById('transportRouteNo').value = '';
-  if (document.getElementById('transportRoute')) document.getElementById('transportRoute').value = '';
-
-  // Clear Flight Inputs
-  if (document.getElementById('depAirline')) document.getElementById('depAirline').value = '';
-  if (document.getElementById('depFlightNo')) document.getElementById('depFlightNo').value = '';
-  if (document.getElementById('depRoute')) document.getElementById('depRoute').value = '';
-  if (depDatePicker) depDatePicker.clear();
-  if (depTimePicker) depTimePicker.clear();
-
-  if (document.getElementById('retAirline')) document.getElementById('retAirline').value = '';
-  if (document.getElementById('retFlightNo')) document.getElementById('retFlightNo').value = '';
-  if (document.getElementById('retRoute')) document.getElementById('retRoute').value = '';
-  if (retDatePicker) retDatePicker.clear();
-  if (retTimePicker) retTimePicker.clear();
-
-  // Clear Ziyarat & Terms
-  if (document.getElementById('makkahZiyaratSelect')) document.getElementById('makkahZiyaratSelect').value = 'No';
-  if (makkahZiyaratDatePicker) makkahZiyaratDatePicker.clear();
-
-  if (document.getElementById('madinahZiyaratSelect')) document.getElementById('madinahZiyaratSelect').value = 'No';
-  if (madinahZiyaratDatePicker) madinahZiyaratDatePicker.clear();
-
-  if (document.getElementById('termsUrduInput')) document.getElementById('termsUrduInput').value = '';
-  if (document.getElementById('termsEnglishInput')) document.getElementById('termsEnglishInput').value = '';
-}
-
-// --- GATHER VOUCHER FORM DATA ---
+// --- GATHER FORM DATA ---
 function getVoucherFormData() {
   const session = safeGetSession();
   const createdBy = session ? session.email : 'Unknown Staff';
@@ -420,10 +369,41 @@ function getVoucherFormData() {
     },
     termsUrdu: document.getElementById('termsUrduInput')?.value || '',
     termsEnglish: document.getElementById('termsEnglishInput')?.value || '',
-    status: 'NOT APPROVED',
+    status: createdByRole === 'admin' ? 'APPROVED' : 'NOT APPROVED',
     createdBy,
     createdByRole
   };
+}
+
+// --- LIVE PREVIEW & DIRECT PDF GENERATION ---
+async function openLivePreviewModal() {
+  const vData = getVoucherFormData();
+  const modal = document.getElementById('pdfPreviewModal');
+  const templateContainer = document.getElementById('voucher-preview-container') || document.getElementById('a4VoucherTemplate');
+  
+  if (!modal || !templateContainer) {
+    showToast('Preview modal structure not found in HTML', 'error');
+    return;
+  }
+
+  modal.classList.remove('hidden');
+  if (typeof renderA4VoucherHTML === 'function') {
+    const htmlContent = await renderA4VoucherHTML(vData, currentAgencySettings);
+    templateContainer.innerHTML = htmlContent;
+  } else {
+    templateContainer.innerHTML = `<div class="p-6 text-center font-bold">Voucher Ref: ${vData.id} - ${vData.familyHead} (${vData.totalPax} PAX)</div>`;
+  }
+}
+
+function closePdfPreviewModal() {
+  const modal = document.getElementById('pdfPreviewModal');
+  if (modal) modal.classList.add('hidden');
+}
+
+async function generateAndDownloadPDFFromForm() {
+  const vData = getVoucherFormData();
+  await saveVoucher(); // Pehle auto-save karein
+  await reDownloadVoucherPDF(vData.id);
 }
 
 // --- SAVE VOUCHER ACTION ---
@@ -465,7 +445,7 @@ async function saveVoucher() {
   }
 }
 
-// --- AGENCY SETTINGS PERSISTENCE ---
+// --- BRANDING & SETTINGS ---
 async function fetchAgencySettings() {
   try {
     const res = await fetch('/api/settings');
@@ -522,7 +502,6 @@ async function saveAgencySettings() {
       showToast(result.message || 'Failed to save settings', 'error');
     }
   } catch (err) {
-    console.error("Save settings error: ", err);
     currentAgencySettings = updatedSettings;
     localStorage.setItem('tvg_agency_settings', JSON.stringify(updatedSettings));
     updateHeaderBranding(updatedSettings);
@@ -534,8 +513,12 @@ function updateHeaderBranding(settings) {
   const nameEl = document.getElementById('headerAgencyName');
   const logoEl = document.getElementById('headerAgencyLogo');
   if (nameEl) nameEl.innerText = settings.agencyName || 'Travel Agency';
-  if (logoEl && settings.logoUrl) logoEl.src = settings.logoUrl;
+  if (logoEl && settings.logoUrl) {
+    logoEl.src = settings.logoUrl;
+    logoEl.classList.remove('hidden');
+  }
 }
+
 // --- SAVED VOUCHERS ARCHIVE ---
 async function fetchSavedVouchers() {
   try {
@@ -545,7 +528,6 @@ async function fetchSavedVouchers() {
       savedVouchersList = result.vouchers || result.data;
     }
   } catch (err) {
-    console.warn("Failed to fetch vouchers from API, using LocalStorage: ", err);
     savedVouchersList = safeGetLocalStorage('tvg_vouchers', []);
   }
 
@@ -592,7 +574,7 @@ function renderSavedVouchersTable(vouchers) {
         <td class="py-2 px-3 text-slate-600">${v.voucherDate || '-'}</td>
         <td class="font-bold text-slate-900 py-2 px-3 text-xs">
           <div>${v.familyHead || '-'}</div>
-          <div class="text-[9px] text-slate-400 font-medium font-normal mt-0.5">Created by: ${formatCreatorName(v.createdBy, v.createdByRole)}</div>
+          <div class="text-[9px] text-slate-400 font-normal mt-0.5">Created by: ${formatCreatorName(v.createdBy, v.createdByRole)}</div>
         </td>
         <td class="py-2 px-3 text-slate-700 font-medium">${v.packageName || '-'}</td>
         <td class="text-center font-bold py-2 px-3"><span class="px-2 py-0.5 bg-emerald-100 text-emerald-800 rounded-full text-xs">${v.totalPax || 1} PAX</span></td>
@@ -671,14 +653,7 @@ function loadVoucherToForm(id) {
   const packageSelect = document.getElementById('packageNameSelect');
   const customInput = document.getElementById('packageNameCustom');
   if (packageSelect && customInput) {
-    let optionExists = false;
-    for (let opt of packageSelect.options) {
-      if (opt.value === v.packageName) {
-        optionExists = true;
-        break;
-      }
-    }
-
+    let optionExists = Array.from(packageSelect.options).some(opt => opt.value === v.packageName);
     if (optionExists) {
       packageSelect.value = v.packageName;
       customInput.classList.add('hidden');
@@ -728,14 +703,12 @@ function loadVoucherToForm(id) {
     if (v.flight.departureRoute && document.getElementById('depRoute')) document.getElementById('depRoute').value = v.flight.departureRoute;
     if (depDatePicker && v.flight.departureDate) depDatePicker.setDate(v.flight.departureDate);
     if (depTimePicker && v.flight.departureTime) depTimePicker.setDate(v.flight.departureTime);
-    else if (v.flight.departureTime && document.getElementById('depTime')) document.getElementById('depTime').value = v.flight.departureTime;
 
     if (v.flight.returnAirline && document.getElementById('retAirline')) document.getElementById('retAirline').value = v.flight.returnAirline;
     if (v.flight.returnFlightNo && document.getElementById('retFlightNo')) document.getElementById('retFlightNo').value = v.flight.returnFlightNo;
     if (v.flight.returnRoute && document.getElementById('retRoute')) document.getElementById('retRoute').value = v.flight.returnRoute;
     if (retDatePicker && v.flight.returnDate) retDatePicker.setDate(v.flight.returnDate);
     if (retTimePicker && v.flight.returnTime) retTimePicker.setDate(v.flight.returnTime);
-    else if (v.flight.returnTime && document.getElementById('retTime')) document.getElementById('retTime').value = v.flight.returnTime;
   }
 
   // Load Helplines
@@ -749,11 +722,9 @@ function loadVoucherToForm(id) {
   if (v.ziyarat) {
     if (document.getElementById('makkahZiyaratSelect')) document.getElementById('makkahZiyaratSelect').value = v.ziyarat.makkahIncluded || 'No';
     if (makkahZiyaratDatePicker && v.ziyarat.makkahDate) makkahZiyaratDatePicker.setDate(v.ziyarat.makkahDate);
-    else if (document.getElementById('makkahZiyaratDate')) document.getElementById('makkahZiyaratDate').value = v.ziyarat.makkahDate || '';
 
     if (document.getElementById('madinahZiyaratSelect')) document.getElementById('madinahZiyaratSelect').value = v.ziyarat.madinahIncluded || 'No';
     if (madinahZiyaratDatePicker && v.ziyarat.madinahDate) madinahZiyaratDatePicker.setDate(v.ziyarat.madinahDate);
-    else if (document.getElementById('madinahZiyaratDate')) document.getElementById('madinahZiyaratDate').value = v.ziyarat.madinahDate || '';
   }
 
   if (v.termsUrdu && document.getElementById('termsUrduInput')) document.getElementById('termsUrduInput').value = v.termsUrdu;
@@ -783,7 +754,6 @@ async function deleteSavedVoucher(id) {
       showToast(`Voucher ${id} deleted`, 'info');
     }
   } catch (err) {
-    console.warn("Backend delete failed, removing from LocalStorage: ", err);
     let localVouchers = safeGetLocalStorage('tvg_vouchers', []);
     localVouchers = localVouchers.filter(v => v.id !== id);
     localStorage.setItem('tvg_vouchers', JSON.stringify(localVouchers));
@@ -833,7 +803,7 @@ function showToast(message, type = 'info') {
   }, 4000);
 }
 
-// --- SAVED VOUCHERS SIDE-DRAWER FLOWS ---
+// --- SAVED VOUCHERS DRAWER FLOWS ---
 async function openSavedVouchersDrawer() {
   const drawer = document.getElementById('savedVouchersDrawer');
   const overlay = document.getElementById('drawerOverlay');
@@ -842,10 +812,7 @@ async function openSavedVouchersDrawer() {
   drawer.classList.remove('hidden');
   overlay.classList.remove('hidden');
 
-  setTimeout(() => {
-    drawer.classList.remove('translate-x-full');
-  }, 20);
-
+  setTimeout(() => drawer.classList.remove('translate-x-full'), 20);
   await fetchSavedVouchers();
 }
 
@@ -908,41 +875,18 @@ function renderDrawerVouchers(vouchers) {
         <div>
           <p class="font-bold text-slate-900 text-xs">${v.familyHead || 'Guest Family'}</p>
           <p class="text-[10px] text-slate-500 truncate">${v.packageName || 'Umrah Package'}</p>
-          <p class="text-[9px] text-slate-400 font-medium mt-1">Created by: ${formatCreatorName(v.createdBy, v.createdByRole)}</p>
         </div>
         <div class="flex items-center justify-between border-t border-slate-100 pt-2 text-[10px]">
           <span class="px-2 py-0.5 bg-emerald-50 text-emerald-700 rounded font-black">${v.totalPax || 1} PAX</span>
           <div class="flex space-x-1">
             ${approveButton}
-            <button type="button" onclick="loadVoucherToFormFromDrawer('${v.id}')" title="Load into Form" class="px-2 py-1 bg-amber-50 hover:bg-amber-100 border border-amber-200 text-amber-700 font-bold rounded flex items-center space-x-1">
-              <i class="fa-solid fa-pen-to-square"></i>
-              <span>Edit</span>
-            </button>
-            <button type="button" onclick="reDownloadVoucherPDF('${v.id}')" title="Re-Download PDF" class="px-2 py-1 bg-emerald-50 hover:bg-emerald-100 border border-emerald-200 text-emerald-700 font-bold rounded flex items-center space-x-1">
-              <i class="fa-solid fa-download"></i>
-              <span>PDF</span>
-            </button>
-            <button type="button" onclick="deleteVoucherFromDrawer('${v.id}')" title="Delete" class="px-2 py-1 bg-red-50 hover:bg-red-100 border border-red-200 text-red-700 font-bold rounded flex items-center space-x-1">
-              <i class="fa-solid fa-trash-can"></i>
-            </button>
+            <button type="button" onclick="loadVoucherToFormFromDrawer('${v.id}')" class="px-2 py-1 bg-amber-50 text-amber-700 font-bold rounded">Edit</button>
+            <button type="button" onclick="reDownloadVoucherPDF('${v.id}')" class="px-2 py-1 bg-emerald-50 text-emerald-700 font-bold rounded">PDF</button>
           </div>
         </div>
       </div>
     `;
   }).join('');
-}
-
-function filterDrawerVouchers() {
-  const input = document.getElementById('drawerSearchInput');
-  if (!input) return;
-  const query = input.value.toLowerCase().trim();
-  const filtered = (savedVouchersList || []).filter(v => 
-    (v.id && v.id.toLowerCase().includes(query)) ||
-    (v.familyHead && v.familyHead.toLowerCase().includes(query)) ||
-    (v.packageName && v.packageName.toLowerCase().includes(query)) ||
-    (v.voucherDate && v.voucherDate.toLowerCase().includes(query))
-  );
-  renderDrawerVouchers(filtered);
 }
 
 function loadVoucherToFormFromDrawer(id) {
@@ -954,19 +898,17 @@ async function reDownloadVoucherPDF(id) {
   const v = (savedVouchersList || []).find(item => item.id === id);
   if (!v) return;
   const filename = `Voucher_${v.id}_${(v.familyHead || 'Guest').replace(/\s+/g, '_')}.pdf`;
-  showToast('Generating A4 PDF via Puppeteer...', 'info');
+  showToast('Generating PDF...', 'info');
 
   const user = safeGetSession();
-  const userRole = user ? user.role : 'staff_pending';
-  const userEmail = user ? user.email : 'unknown';
 
   try {
     const response = await fetch('/api/generate-pdf', {
       method: 'POST',
       headers: { 
         'Content-Type': 'application/json',
-        'x-user-role': userRole,
-        'x-user-email': userEmail
+        'x-user-role': user?.role || 'staff_pending',
+        'x-user-email': user?.email || 'unknown'
       },
       body: JSON.stringify({ voucherData: v, filename })
     });
@@ -981,34 +923,12 @@ async function reDownloadVoucherPDF(id) {
       document.body.removeChild(a);
       window.URL.revokeObjectURL(url);
       showToast('PDF downloaded successfully!', 'success');
+    } else {
+      showToast('Failed to generate PDF from backend', 'error');
     }
   } catch (err) {
     console.error(err);
     showToast('Failed to download PDF', 'error');
-  }
-}
-
-async function deleteVoucherFromDrawer(id) {
-  if (!confirm(`Are you sure you want to delete Voucher Ref: ${id}?`)) return;
-
-  const user = safeGetSession();
-  const userRole = user ? user.role : 'staff_pending';
-
-  try {
-    const res = await fetch(`/api/vouchers/${id}`, { 
-      method: 'DELETE',
-      headers: {
-        'x-user-role': userRole
-      }
-    });
-    const result = await res.json();
-    if (result.success) {
-      showToast(`Voucher ${id} deleted`, 'info');
-      await fetchSavedVouchers();
-    }
-  } catch (err) {
-    console.error(err);
-    showToast('Failed to delete voucher', 'error');
   }
 }
 
@@ -1036,8 +956,7 @@ async function approveVoucher(id) {
       showToast(result.message || 'Failed to approve voucher', 'error');
     }
   } catch (err) {
-    console.error("Approval Error:", err);
-    showToast('Failed to approve voucher due to connection error', 'error');
+    showToast('Failed to approve voucher', 'error');
   }
 }
 
@@ -1054,19 +973,14 @@ function checkAuth() {
   if (!user) {
     if (appContainer) appContainer.classList.add('hidden');
     if (loginContainer) loginContainer.classList.remove('hidden');
-    if (window.location.pathname !== '/login') {
-      window.history.pushState(null, '', '/login');
-    }
   } else {
     if (appContainer) appContainer.classList.remove('hidden');
     if (loginContainer) loginContainer.classList.add('hidden');
 
     const emailEl = document.getElementById('userProfileEmail');
     const roleEl = document.getElementById('userProfileRole');
-    const profileMenu = document.getElementById('userProfileMenu');
     if (emailEl) emailEl.innerText = user.email || '';
     if (roleEl) roleEl.innerText = user.role || '';
-    if (profileMenu) profileMenu.classList.remove('hidden');
 
     const settingsTabBtn = document.getElementById('navSettingsTab');
     const manageUsersCard = document.getElementById('manageUsersCard');
@@ -1076,14 +990,6 @@ function checkAuth() {
     } else {
       if (settingsTabBtn) settingsTabBtn.classList.add('hidden');
       if (manageUsersCard) manageUsersCard.classList.add('hidden');
-      const activeNavTab = document.getElementById('navSettingsTab');
-      if (activeNavTab && activeNavTab.classList.contains('bg-emerald-600')) {
-        switchTab('create');
-      }
-    }
-
-    if (window.location.pathname === '/login') {
-      window.history.pushState(null, '', '/');
     }
   }
 }
@@ -1093,70 +999,45 @@ async function handleLogin() {
   const passwordInput = document.getElementById('loginPassword');
   if (!emailInput || !passwordInput) return;
 
-  const email = emailInput.value.trim();
-  const password = passwordInput.value;
-
-  showToast('Signing in...', 'info');
-
   try {
     const response = await fetch('/api/auth/login', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ email, password })
+      body: JSON.stringify({ email: emailInput.value.trim(), password: passwordInput.value })
     });
 
     const result = await response.json();
     if (result.success && result.user) {
       localStorage.setItem('tvg_session', JSON.stringify(result.user));
       showToast('Signed in successfully!', 'success');
-      
-      emailInput.value = '';
-      passwordInput.value = '';
-
       checkAuth();
       await initDashboard();
     } else {
       showToast(result.message || 'Invalid email or password', 'error');
     }
   } catch (err) {
-    console.error("Login Error:", err);
     showToast('Login connection failed', 'error');
   }
 }
 
 function handleLogout() {
   localStorage.removeItem('tvg_session');
-  showToast('Logged out successfully', 'info');
-  
-  const emailEl = document.getElementById('userProfileEmail');
-  const roleEl = document.getElementById('userProfileRole');
-  const profileMenu = document.getElementById('userProfileMenu');
-  if (emailEl) emailEl.innerText = '';
-  if (roleEl) roleEl.innerText = '';
-  if (profileMenu) profileMenu.classList.add('hidden');
-
-  resetVoucherForm();
   checkAuth();
 }
 
-// --- ADMIN USER MANAGEMENT CRUD ---
+// --- ADMIN USER MANAGEMENT ---
 async function fetchSystemUsers() {
   const user = safeGetSession();
   if (!user || user.role !== 'admin') return;
 
   try {
-    const response = await fetch('/api/auth/users', {
-      headers: {
-        'x-user-role': user.role
-      }
-    });
+    const response = await fetch('/api/auth/users', { headers: { 'x-user-role': user.role } });
     const result = await response.json();
     if (result.success && Array.isArray(result.users)) {
       renderSystemUsers(result.users);
     }
   } catch (err) {
-    console.error("Fetch Users Error:", err);
-    showToast('Failed to load user accounts', 'error');
+    showToast('Failed to load users', 'error');
   }
 }
 
@@ -1164,111 +1045,13 @@ function renderSystemUsers(users) {
   const tableBody = document.getElementById('userTableBody');
   if (!tableBody) return;
 
-  if (users.length === 0) {
-    tableBody.innerHTML = `
-      <tr>
-        <td colspan="3" class="text-center py-6 text-slate-400">
-          No system user accounts found.
-        </td>
-      </tr>`;
-    return;
-  }
-
-  tableBody.innerHTML = users.map(u => {
-    let badgeColor = 'bg-blue-100 text-blue-800';
-    if (u.role === 'admin') badgeColor = 'bg-amber-100 text-amber-800';
-    else if (u.role === 'staff_approved') badgeColor = 'bg-emerald-100 text-emerald-800';
-    else if (u.role === 'staff_pending') badgeColor = 'bg-rose-100 text-rose-800';
-
-    return `
-      <tr class="hover:bg-slate-50 transition-colors">
-        <td class="py-3 px-3 font-semibold text-slate-800">${u.email}</td>
-        <td class="py-3 px-3">
-          <span class="px-2 py-0.5 rounded text-[10px] font-bold uppercase ${badgeColor}">
-            ${u.role}
-          </span>
-        </td>
-        <td class="py-3 px-3 text-center">
-          <button type="button" onclick="handleDeleteUser('${u.id}')" class="text-red-500 hover:text-red-700 p-1 font-bold">
-            <i class="fa-solid fa-user-minus"></i>
-          </button>
-        </td>
-      </tr>
-    `;
-  }).join('');
-}
-
-async function handleAddUser() {
-  const user = safeGetSession();
-  if (!user || user.role !== 'admin') return;
-
-  const emailInput = document.getElementById('newUserEmail');
-  const passwordInput = document.getElementById('newUserPassword');
-  const roleSelect = document.getElementById('newUserRole');
-  if (!emailInput || !passwordInput || !roleSelect) return;
-
-  const email = emailInput.value.trim();
-  const password = passwordInput.value;
-  const role = roleSelect.value;
-
-  if (password.length < 6) {
-    showToast('Password must be at least 6 characters', 'error');
-    return;
-  }
-
-  showToast('Creating user account...', 'info');
-
-  try {
-    const response = await fetch('/api/auth/users', {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        'x-user-role': user.role
-      },
-      body: JSON.stringify({ email, password, role })
-    });
-
-    const result = await response.json();
-    if (result.success) {
-      showToast('User account created successfully!', 'success');
-      emailInput.value = '';
-      passwordInput.value = '';
-      roleSelect.value = 'staff_approved';
-      await fetchSystemUsers();
-    } else {
-      showToast(result.message || 'Failed to create user', 'error');
-    }
-  } catch (err) {
-    console.error("Create User Error:", err);
-    showToast('Failed to connect to create user api', 'error');
-  }
-}
-
-async function handleDeleteUser(id) {
-  const user = safeGetSession();
-  if (!user || user.role !== 'admin') return;
-
-  if (!confirm('Are you sure you want to delete this user account?')) return;
-
-  showToast('Deleting account...', 'info');
-
-  try {
-    const response = await fetch(`/api/auth/users/${id}`, {
-      method: 'DELETE',
-      headers: {
-        'x-user-role': user.role
-      }
-    });
-
-    const result = await response.json();
-    if (result.success) {
-      showToast('User account deleted successfully', 'success');
-      await fetchSystemUsers();
-    } else {
-      showToast(result.message || 'Failed to delete user', 'error');
-    }
-  } catch (err) {
-    console.error("Delete User Error:", err);
-    showToast('Failed to connect to delete user api', 'error');
-  }
+  tableBody.innerHTML = users.map(u => `
+    <tr class="hover:bg-slate-50 transition-colors">
+      <td class="py-3 px-3 font-semibold text-slate-800">${u.email}</td>
+      <td class="py-3 px-3"><span class="px-2 py-0.5 rounded text-[10px] font-bold uppercase bg-blue-100 text-blue-800">${u.role}</span></td>
+      <td class="py-3 px-3 text-center">
+        <button type="button" onclick="handleDeleteUser('${u.id}')" class="text-red-500 font-bold"><i class="fa-solid fa-user-minus"></i></button>
+      </td>
+    </tr>
+  `).join('');
 }
