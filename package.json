@@ -28,5 +28,8 @@
   },
   "devDependencies": {
     "puppeteer": "^25.7.0"
-  }
+  },
+"engines": {
+  "node": "20.x"
+}
 }
