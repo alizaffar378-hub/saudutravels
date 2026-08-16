@@ -4,11 +4,16 @@ const path = require('path');
 const fs = require('fs');
 const QRCode = require('qrcode');
 const { createClient } = require('@supabase/supabase-js');
+const WebSocket = require('ws');
 
 const app = express();
 const PORT = process.env.PORT || 3000;
 
-const supabase = createClient(process.env.SUPABASE_URL, process.env.SUPABASE_ANON_KEY);
+const supabase = createClient(process.env.SUPABASE_URL, process.env.SUPABASE_ANON_KEY, {
+  realtime: {
+    transport: WebSocket
+  }
+});
 
 app.use(express.json({ limit: '10mb' }));
 app.use(express.urlencoded({ extended: true, limit: '10mb' }));
