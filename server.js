@@ -646,14 +646,6 @@ try {
   console.warn("puppeteer-core is not loaded: ", e.message);
 }
 
-let chromium = null;
-if (isProduction) {
-  try {
-    chromium = require('@sparticuz/chromium');
-  } catch (e) {
-    console.warn("@sparticuz/chromium is not loaded: ", e.message);
-  }
-}
 
 function getLocalChromePath() {
   const fs = require('fs');
@@ -810,12 +802,12 @@ app.post('/api/generate-pdf', async (req, res) => {
 
     const htmlContent = buildSelfContainedPdfHtml(formData, agencySettings, qrDataUrl, baseUrl);
 
-    if (isProduction && chromium) {
-      browser = await puppeteerCore.launch({
-        args: chromium.args,
-        defaultViewport: chromium.defaultViewport,
-        executablePath: await chromium.executablePath(),
-        headless: chromium.headless,
+    if (isProduction) {
+      if (!process.env.BROWSERLESS_TOKEN) {
+        throw new Error("BROWSERLESS_TOKEN environment variable is not set");
+      }
+      browser = await puppeteerCore.connect({
+        browserWSEndpoint: `wss://chrome.browserless.io?token=${process.env.BROWSERLESS_TOKEN}`
       });
     } else {
       if (localPuppeteer) {
@@ -856,7 +848,11 @@ app.post('/api/generate-pdf', async (req, res) => {
       margin: { top: '0mm', right: '0mm', bottom: '0mm', left: '0mm' }
     });
 
-    await browser.close();
+    if (isProduction) {
+      await browser.disconnect();
+    } else {
+      await browser.close();
+    }
     browser = null;
 
     const filename = req.body.filename || `Voucher_${formData.id || 'export'}.pdf`;
@@ -869,7 +865,13 @@ app.post('/api/generate-pdf', async (req, res) => {
 
   } catch (error) {
     if (browser) {
-      try { await browser.close(); } catch(e) {}
+      try {
+        if (isProduction) {
+          await browser.disconnect();
+        } else {
+          await browser.close();
+        }
+      } catch(e) {}
     }
     console.error("PDF Generation Error:", error);
     return res.status(500).json({ error: "Failed to generate PDF", details: error.message });
