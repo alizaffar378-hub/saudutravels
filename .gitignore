@@ -1,0 +1,8 @@
+node_modules/
+.env
+.env.local
+.system_generated/
+*.log
+data/agency_settings.json
+data/settings.json
+data/vouchers.json
