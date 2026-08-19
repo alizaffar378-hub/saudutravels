@@ -257,6 +257,13 @@ app.get('/api/pdf-config', (req, res) => {
 
 // 8. Self-Contained Inline-Styled PDF Template Generator
 function buildSelfContainedPdfHtml(data, agencySettings, qrDataUrl, baseUrl, isWebView = false) {
+  const status = data.status || 'NOT APPROVED';
+  const statusText = status === 'APPROVED' ? 'APPROVED' : status === 'CANCELLED' ? 'CANCELLED' : 'NOT APPROVED';
+  const statusColor = status === 'APPROVED' ? 'rgba(0, 135, 90, 0.08)' : 'rgba(239, 68, 68, 0.08)';
+  const svgWatermark = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 500 300"><text x="50%" y="50%" fill="${statusColor}" font-family="Impact, Arial Black, Arial, sans-serif" font-size="64" font-weight="950" text-anchor="middle" dominant-baseline="middle" transform="rotate(-30 250 150)">${statusText}</text></svg>`;
+  const watermarkBase64 = Buffer.from(svgWatermark).toString('base64');
+  const watermarkUrl = `data:image/svg+xml;base64,${watermarkBase64}`;
+
   let calculatedPackageDays = 0;
   if (data.flight && data.flight.departureDate && data.flight.returnDate) {
     const depDate = new Date(data.flight.departureDate);
@@ -427,38 +434,11 @@ function buildSelfContainedPdfHtml(data, agencySettings, qrDataUrl, baseUrl, isW
         justify-content: space-between !important;
         ${isWebView ? 'border-radius: 12px !important; box-shadow: 0 10px 15px -3px rgba(0,0,0,0.1), 0 4px 6px -2px rgba(0,0,0,0.05) !important; border: 1px solid #e2e8f0 !important;' : ''}
       }
-      .watermark-stamp {
-        position: absolute !important;
-        top: 50% !important;
-        left: 50% !important;
-        transform: translate(-50%, -50%) rotate(-30deg) !important;
-        width: 80% !important;
-        max-width: 500px !important;
-        text-align: center !important;
-        pointer-events: none !important;
-        user-select: none !important;
-        z-index: 0 !important;
-        opacity: 0.08 !important;
-        border: 8px double currentColor !important;
-        padding: 15px 30px !important;
-        border-radius: 12px !important;
-        box-sizing: border-box !important;
-        display: inline-block !important;
-        object-fit: contain !important;
-      }
-      .watermark-stamp > div {
-        font-family: 'Impact', 'Arial Black', 'Arial', sans-serif !important;
-        font-size: 55pt !important;
-        font-weight: 950 !important;
-        letter-spacing: 5px !important;
-        white-space: nowrap !important;
-        line-height: 1.1 !important;
-        text-transform: uppercase !important;
-        display: inline-block !important;
-        max-width: 100% !important;
-        overflow: hidden !important;
-        text-overflow: ellipsis !important;
-        object-fit: contain !important;
+      .pdf-container, .voucher-container {
+        background-image: url('${watermarkUrl}') !important;
+        background-repeat: no-repeat !important;
+        background-position: center 50% !important;
+        background-size: 75% !important;
       }
       
       .header { display: flex; flex-direction: column; align-items: center; justify-content: center; text-align: center; padding-bottom: 8px; border-bottom: 2px solid #047857; margin-bottom: 8px; width: 100%; position: relative; }
@@ -638,15 +618,8 @@ function buildSelfContainedPdfHtml(data, agencySettings, qrDataUrl, baseUrl, isW
           text-align: center !important;
         }
         /* Mobile Watermark overrides */
-        .watermark-stamp {
-          width: 70% !important;
-          border-width: 4px !important;
-          padding: 8px 16px !important;
-          opacity: 0.05 !important;
-        }
-        .watermark-stamp > div {
-          font-size: 6.5vw !important;
-          letter-spacing: 2px !important;
+        .pdf-container, .voucher-container {
+          background-size: 60% !important;
         }
       }
     </style>
@@ -661,11 +634,6 @@ function buildSelfContainedPdfHtml(data, agencySettings, qrDataUrl, baseUrl, isW
       </div>
     ` : ''}
     <div class="voucher-container">
-      <div class="watermark-stamp" style="color: ${data.status === 'APPROVED' ? '#00875A' : '#EF4444'} !important;">
-        <div>
-          ${status}
-        </div>
-      </div>
       <div>
         <div class="header">
           <!-- Booking Agent Badge on the Top Left -->
