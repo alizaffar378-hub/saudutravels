@@ -230,6 +230,29 @@
               </div>
             </div>
 
+            <!-- Total Package Days Indicator -->
+            <div>
+              <label class="block text-xs font-bold text-slate-700 mb-1">Total Package Days</label>
+              <div class="bg-emerald-50 border border-emerald-300 rounded-lg p-2 flex items-center justify-between">
+                <span class="text-xs font-bold text-emerald-800">Duration:</span>
+                <span id="totalPackageDaysDisplay" class="px-3 py-0.5 bg-emerald-700 text-white rounded-full font-extrabold text-xs">-</span>
+              </div>
+            </div>
+
+            <!-- Booking Agent -->
+            <div id="bookingAgentContainer">
+              <label class="block text-xs font-bold text-slate-700 mb-1">Booking Agent <span class="text-red-500">*</span></label>
+              <select id="bookingAgentSelect" required class="w-full text-xs border border-slate-300 rounded-lg p-2 bg-white font-bold text-slate-800 focus:ring-1 focus:ring-emerald-500 focus:border-emerald-500">
+                <option value="">-- Select Booking Agent --</option>
+              </select>
+            </div>
+
+            <!-- Agent Name (Issued By) -->
+            <div>
+              <label class="block text-xs font-bold text-slate-700 mb-1">Agent Name (Issued By) / System User</label>
+              <input type="text" id="agentName" readonly class="w-full text-xs border border-slate-300 rounded-lg p-2 bg-slate-100 text-slate-500 font-bold" value="">
+            </div>
+
           </div>
         </div>
 
@@ -261,7 +284,6 @@
                   <th class="min-w-[160px]">Passenger Name</th>
                   <th class="min-w-[90px]">Gender</th>
                   <th class="min-w-[90px]">Pax Type</th>
-                  <th class="min-w-[90px]">Bed Type</th>
                   <th class="min-w-[100px] mofa-col hidden">MOFA #</th>
                   <th class="min-w-[90px] mofa-col hidden">Group #</th>
                   <th class="min-w-[110px] mofa-col hidden">Visa #</th>
@@ -299,6 +321,7 @@
                   <th class="min-w-[130px]">Meal Plan</th>
                   <th class="min-w-[130px]">Check-In Date</th>
                   <th class="min-w-[130px]">Check-Out Date</th>
+                  <th class="min-w-[110px]">Bed Type</th>
                   <th class="w-20 text-center">Nights</th>
                   <th class="w-12 text-center">Action</th>
                 </tr>
@@ -373,12 +396,13 @@
                   <i class="fa-solid fa-plane-departure"></i>
                   <span>Departure Flight</span>
                 </span>
-                <div class="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-5 gap-2">
+                <div class="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-6 gap-2">
                   <input type="text" id="depAirline" placeholder="Airline (e.g. SV)" class="border border-slate-300 rounded p-1.5 bg-white">
                   <input type="text" id="depFlightNo" placeholder="Flight No (e.g. SV-739)" class="border border-slate-300 rounded p-1.5 bg-white">
-                  <input type="text" id="depDate" placeholder="DD/MM/YYYY" class="border border-slate-300 rounded p-1.5 bg-white font-medium">
-                  <input type="text" id="depTime" placeholder="Time (04:30 AM)" class="border border-slate-300 rounded p-1.5 bg-white">
                   <input type="text" id="depRoute" placeholder="Route (LHE -> JED)" class="border border-slate-300 rounded p-1.5 bg-white">
+                  <input type="text" id="depDate" placeholder="DD/MM/YYYY" class="border border-slate-300 rounded p-1.5 bg-white font-medium">
+                  <input type="text" id="depTime" placeholder="Dep Time (04:30 AM)" class="border border-slate-300 rounded p-1.5 bg-white">
+                  <input type="text" id="depArrivalTime" placeholder="Arr Time (07:30 AM)" class="border border-slate-300 rounded p-1.5 bg-white">
                 </div>
               </div>
 
@@ -388,12 +412,13 @@
                   <i class="fa-solid fa-plane-arrival"></i>
                   <span>Return Flight</span>
                 </span>
-                <div class="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-5 gap-2">
+                <div class="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-6 gap-2">
                   <input type="text" id="retAirline" placeholder="Airline (e.g. SV)" class="border border-slate-300 rounded p-1.5 bg-white">
                   <input type="text" id="retFlightNo" placeholder="Flight No (e.g. SV-738)" class="border border-slate-300 rounded p-1.5 bg-white">
-                  <input type="text" id="retDate" placeholder="DD/MM/YYYY" class="border border-slate-300 rounded p-1.5 bg-white font-medium">
-                  <input type="text" id="retTime" placeholder="Time (06:15 PM)" class="border border-slate-300 rounded p-1.5 bg-white">
                   <input type="text" id="retRoute" placeholder="Route (MED -> LHE)" class="border border-slate-300 rounded p-1.5 bg-white">
+                  <input type="text" id="retDate" placeholder="DD/MM/YYYY" class="border border-slate-300 rounded p-1.5 bg-white font-medium">
+                  <input type="text" id="retTime" placeholder="Dep Time (06:15 PM)" class="border border-slate-300 rounded p-1.5 bg-white">
+                  <input type="text" id="retArrivalTime" placeholder="Arr Time (09:15 PM)" class="border border-slate-300 rounded p-1.5 bg-white">
                 </div>
               </div>
             </div>
@@ -401,14 +426,18 @@
 
         <!-- SECTION 4.5: ZIYARAT DETAILS SECTION -->
         <div class="card-container overflow-hidden">
-          <div class="card-header-emerald px-4 py-3 flex items-center justify-between">
+          <div class="card-header-emerald px-4 py-3 flex flex-col sm:flex-row sm:items-center justify-between gap-3">
             <div class="flex items-center space-x-2">
               <i class="fa-solid fa-mosque text-emerald-200"></i>
               <h3 class="font-bold text-sm text-white">Ziyarat Details (Makkah & Madinah)</h3>
             </div>
+            <label class="inline-flex items-center space-x-1.5 text-xs text-emerald-100 font-semibold cursor-pointer hover:text-white transition-colors bg-emerald-900/60 px-2.5 py-1.5 rounded border border-emerald-600/50 w-full sm:w-auto justify-center sm:justify-start">
+              <input type="checkbox" id="includeZiyaratToggle" onchange="toggleZiyaratSectionVisibility()" class="rounded border-slate-300 text-emerald-600 focus:ring-emerald-500 w-3.5 h-3.5">
+              <span>Include Ziyarat Details in Voucher</span>
+            </label>
           </div>
 
-          <div class="p-4 sm:p-5 grid grid-cols-1 md:grid-cols-2 gap-6 text-xs">
+          <div id="ziyaratContentBody" class="p-4 sm:p-5 grid grid-cols-1 md:grid-cols-2 gap-6 text-xs hidden">
             <!-- Makkah Ziyarat Card -->
             <div class="bg-slate-50 p-3 rounded-lg border border-slate-200 space-y-3">
               <span class="font-bold text-emerald-800 text-xs flex items-center space-x-1.5">
@@ -423,7 +452,7 @@
                     <option value="Yes">Yes</option>
                   </select>
                 </div>
-                <div>
+                <div id="makkahZiyaratDateContainer">
                   <label class="block font-semibold text-slate-700 mb-1">Ziyarat Date</label>
                   <input type="text" id="makkahZiyaratDate" placeholder="Select Date" class="w-full border border-slate-300 rounded p-1.5 bg-white font-medium">
                 </div>
@@ -444,7 +473,7 @@
                     <option value="Yes">Yes</option>
                   </select>
                 </div>
-                <div>
+                <div id="madinahZiyaratDateContainer">
                   <label class="block font-semibold text-slate-700 mb-1">Ziyarat Date</label>
                   <input type="text" id="madinahZiyaratDate" placeholder="Select Date" class="w-full border border-slate-300 rounded p-1.5 bg-white font-medium">
                 </div>
@@ -688,6 +717,11 @@
             </h4>
             
             <div>
+              <label class="block font-semibold text-slate-600 mb-1">Full Name</label>
+              <input type="text" id="newUserFullName" required placeholder="e.g. John Doe" class="w-full border border-slate-300 rounded p-1.5 bg-white">
+            </div>
+
+            <div>
               <label class="block font-semibold text-slate-600 mb-1">Email Address</label>
               <input type="email" id="newUserEmail" required placeholder="user@saudipak.com" class="w-full border border-slate-300 rounded p-1.5 bg-white">
             </div>
@@ -722,6 +756,7 @@
               <table class="w-full text-left border-collapse text-xs">
                 <thead>
                   <tr class="bg-slate-50 border-b border-slate-200 text-slate-600 uppercase text-[9px] font-black">
+                    <th class="py-2.5 px-3">Full Name</th>
                     <th class="py-2.5 px-3">Email Address</th>
                     <th class="py-2.5 px-3">Role</th>
                     <th class="py-2.5 px-3 text-center">Actions</th>
@@ -861,7 +896,7 @@
         <div>
           <label class="block font-bold text-slate-700 mb-1">Email Address</label>
           <div class="relative">
-            <input type="email" id="loginEmail" required placeholder="admin@saudipak.com" class="w-full border border-emerald-100 bg-emerald-50/20 rounded-lg p-2.5 pl-9 text-slate-800 placeholder:text-slate-400 focus:outline-none input-focus-glow font-medium">
+            <input type="email" id="loginEmail" name="email" autocomplete="username" required placeholder="admin@saudipak.com" class="w-full border border-emerald-100 bg-emerald-50/20 rounded-lg p-2.5 pl-9 text-slate-800 placeholder:text-slate-400 focus:outline-none input-focus-glow font-medium">
             <i class="fa-solid fa-plane absolute left-3 top-3.5 text-emerald-600"></i>
           </div>
         </div>
@@ -869,14 +904,17 @@
         <div>
           <label class="block font-bold text-slate-700 mb-1">Password</label>
           <div class="relative">
-            <input type="password" id="loginPassword" required placeholder="••••••••" class="w-full border border-emerald-100 bg-emerald-50/20 rounded-lg p-2.5 pl-9 text-slate-800 placeholder:text-slate-400 focus:outline-none input-focus-glow">
+            <input type="password" id="loginPassword" name="password" autocomplete="current-password" required placeholder="••••••••" class="w-full border border-emerald-100 bg-emerald-50/20 rounded-lg p-2.5 pl-9 pr-10 text-slate-800 placeholder:text-slate-400 focus:outline-none input-focus-glow">
             <i class="fa-solid fa-key absolute left-3 top-3.5 text-emerald-600"></i>
+            <button type="button" id="togglePasswordVisibility" class="absolute right-3 top-3.5 text-slate-400 hover:text-emerald-600 focus:outline-none" aria-label="Toggle password visibility">
+              <i class="fa-solid fa-eye" id="passwordEyeIcon"></i>
+            </button>
           </div>
         </div>
 
-        <button type="submit" class="w-full mt-4 py-3 bg-gradient-to-r from-emerald-600 to-teal-700 hover:from-emerald-700 hover:to-teal-800 text-white rounded-xl font-bold text-xs shadow-md hover-pulse transition-all duration-150 flex items-center justify-center space-x-2">
-          <i class="fa-solid fa-plane-departure text-sm"></i>
-          <span>Secure Sign In</span>
+        <button type="submit" id="loginSubmitBtn" class="w-full mt-4 py-3 bg-gradient-to-r from-emerald-600 to-teal-700 hover:from-emerald-700 hover:to-teal-800 text-white rounded-xl font-bold text-xs shadow-md hover-pulse transition-all duration-150 flex items-center justify-center space-x-2">
+          <i id="loginSubmitIcon" class="fa-solid fa-plane-departure text-sm"></i>
+          <span id="loginSubmitText">Secure Sign In</span>
         </button>
       </form>
 

@@ -22,11 +22,13 @@ app.use(express.static(path.join(__dirname, 'public')));
 const DATA_DIR = path.join(__dirname, 'data');
 const VOUCHERS_FILE = path.join(DATA_DIR, 'vouchers.json');
 const SETTINGS_FILE = path.join(DATA_DIR, 'settings.json');
+const USER_NAMES_FILE = path.join(DATA_DIR, 'user_names.json');
 
 // Ensure data directory & files exist
 if (!fs.existsSync(DATA_DIR)) fs.mkdirSync(DATA_DIR, { recursive: true });
 if (!fs.existsSync(VOUCHERS_FILE)) fs.writeFileSync(VOUCHERS_FILE, JSON.stringify([]));
 if (!fs.existsSync(SETTINGS_FILE)) fs.writeFileSync(SETTINGS_FILE, JSON.stringify({}));
+if (!fs.existsSync(USER_NAMES_FILE)) fs.writeFileSync(USER_NAMES_FILE, JSON.stringify({}));
 
 // Helper functions for reading/writing JSON
 function readJSONFile(filepath, fallback = []) {
@@ -49,6 +51,18 @@ function writeJSONFile(filepath, data) {
     return false;
   }
 }
+
+const resolveAgentName = (email, role) => {
+  if (!email || email === 'unknown') return 'System';
+  const parts = (role || '').split(':');
+  if (parts[1]) return parts[1].trim();
+  
+  const nameMap = readJSONFile(USER_NAMES_FILE, {});
+  if (nameMap[email.toLowerCase()]) return nameMap[email.toLowerCase()];
+
+  let username = email.split('@')[0];
+  return username.charAt(0).toUpperCase() + username.slice(1);
+};
 
 // --- API ENDPOINTS ---
 
@@ -85,7 +99,8 @@ app.get('/api/vouchers', async (req, res) => {
       packageName: row.package_name,
       status: row.status || 'NOT APPROVED',
       createdBy: row.created_by || (row.form_data && row.form_data.createdBy) || 'unknown',
-      createdByRole: (row.form_data && row.form_data.createdByRole) || 'staff_pending'
+      createdByRole: (row.form_data && row.form_data.createdByRole) || 'staff_pending',
+      bookingAgentName: row.booking_agent_name || (row.form_data && row.form_data.bookingAgentName) || ''
     }));
 
     res.json({ success: true, vouchers });
@@ -136,28 +151,50 @@ app.post('/api/vouchers', async (req, res) => {
     status = 'APPROVED';
   }
 
+  const isReqAdmin = (requesterRole.split(':')[0] === 'admin');
+  let bookingAgentName = formData.bookingAgentName;
+  if (!isReqAdmin) {
+    bookingAgentName = resolveAgentName(requesterEmail, requesterRole);
+  }
+
   const updatedFormData = { 
     ...formData, 
     status, 
     createdBy, 
-    createdByRole 
+    createdByRole,
+    bookingAgentName
   };
 
   try {
+    const payload = {
+      id: formData.id,
+      voucher_ref: formData.voucherRef || formData.id,
+      family_head: formData.familyHead,
+      package_name: formData.packageName,
+      voucher_date: formData.voucherDate,
+      status: status,
+      created_by: createdBy,
+      form_data: updatedFormData
+    };
+
     const { error } = await supabase
       .from('vouchers')
       .upsert({
-        id: formData.id,
-        voucher_ref: formData.voucherRef || formData.id,
-        family_head: formData.familyHead,
-        package_name: formData.packageName,
-        voucher_date: formData.voucherDate,
-        status: status,
-        created_by: createdBy,
-        form_data: updatedFormData
+        ...payload,
+        booking_agent_name: bookingAgentName || null
       });
 
-    if (error) throw error;
+    if (error) {
+      if (error.message.includes('booking_agent_name') || error.code === 'P0002' || error.message.includes('does not exist')) {
+        console.warn("booking_agent_name column does not exist in DB yet, falling back to saving in form_data JSON");
+        const { error: fallbackError } = await supabase
+          .from('vouchers')
+          .upsert(payload);
+        if (fallbackError) throw fallbackError;
+      } else {
+        throw error;
+      }
+    }
 
     res.json({ success: true, voucher: updatedFormData });
   } catch (err) {
@@ -219,7 +256,17 @@ app.get('/api/pdf-config', (req, res) => {
 });
 
 // 8. Self-Contained Inline-Styled PDF Template Generator
-function buildSelfContainedPdfHtml(data, agencySettings, qrDataUrl, baseUrl) {
+function buildSelfContainedPdfHtml(data, agencySettings, qrDataUrl, baseUrl, isWebView = false) {
+  let calculatedPackageDays = 0;
+  if (data.flight && data.flight.departureDate && data.flight.returnDate) {
+    const depDate = new Date(data.flight.departureDate);
+    const retDate = new Date(data.flight.returnDate);
+    if (!isNaN(depDate) && !isNaN(retDate)) {
+      const timeDiff = retDate - depDate;
+      calculatedPackageDays = Math.max(0, Math.ceil(timeDiff / (1000 * 3600 * 24))) + 1;
+    }
+  }
+
   const formatDateToDMY = (str) => {
     if (!str) return '-';
     const datePart = str.split(/[ T]/)[0];
@@ -234,15 +281,24 @@ function buildSelfContainedPdfHtml(data, agencySettings, qrDataUrl, baseUrl) {
 
   const formatCreatorName = (email, role) => {
     if (!email || email === 'unknown') return 'System';
+    
+    const parts = (role || '').split(':');
+    const baseRole = parts[0];
+    const fullName = parts[1] || '';
+
+    let roleDisplay = '';
+    if (baseRole === 'admin') roleDisplay = 'Admin';
+    else if (baseRole === 'staff_approved') roleDisplay = 'Staff - Approved';
+    else if (baseRole === 'staff_pending') roleDisplay = 'Staff - Pending';
+
+    if (fullName) {
+      return `${fullName} (${roleDisplay || baseRole})`;
+    }
+
     let username = email.split('@')[0];
     username = username.charAt(0).toUpperCase() + username.slice(1);
     
-    let roleDisplay = '';
-    if (role === 'admin') roleDisplay = 'Admin';
-    else if (role === 'staff_approved') roleDisplay = 'Staff - Approved';
-    else if (role === 'staff_pending') roleDisplay = 'Staff - Pending';
-    
-    return `${username} (${roleDisplay || role})`;
+    return `${username} (${roleDisplay || baseRole || role})`;
   };
 
   // 1. Passenger Basic Details Table Rows
@@ -253,7 +309,6 @@ function buildSelfContainedPdfHtml(data, agencySettings, qrDataUrl, baseUrl) {
       <td style="font-weight: 800; color: #065f46;">${p.name || '-'}</td>
       <td style="text-align: center; font-weight: bold; color: #111827;">${p.gender || '-'}</td>
       <td style="text-align: center;"><span style="background: #e0f2fe; color: #0369a1; padding: 1px 4px; border-radius: 2px; font-size: 8.5px; font-weight: 800;">${p.type || '-'}</span></td>
-      <td style="text-align: center; font-weight: bold; color: #111827;">${p.bed || '-'}</td>
     </tr>
   `).join('');
 
@@ -278,6 +333,7 @@ function buildSelfContainedPdfHtml(data, agencySettings, qrDataUrl, baseUrl) {
       <td style="font-weight: bold; color: #1f2937;">${h.mealPlan || '-'}</td>
       <td style="font-weight: bold; color: #111827;">${formatDateToDMY(h.checkIn)}</td>
       <td style="font-weight: bold; color: #111827;">${formatDateToDMY(h.checkOut)}</td>
+      <td style="font-weight: bold; color: #111827; text-align: center;">${h.bed || '-'}</td>
       <td style="text-align: center; font-weight: 800; color: #047857; background-color: #ecfdf5;">${h.totalNights || 0} Nts</td>
     </tr>
   `).join('');
@@ -285,14 +341,35 @@ function buildSelfContainedPdfHtml(data, agencySettings, qrDataUrl, baseUrl) {
   const termsUrduLines = (data.termsUrdu || '').split('\n').filter(l => l.trim()).map(l => `<li style="margin-bottom: 2px;">${l}</li>`).join('');
   const termsEngLines = (data.termsEnglish || '').split('\n').filter(l => l.trim()).map(l => `<li style="margin-bottom: 2px;">${l}</li>`).join('');
 
-  let logoHtml = '';
+  const showMakkah = data.ziyarat && data.ziyarat.makkahIncluded === 'Yes';
+  const showMadinah = data.ziyarat && data.ziyarat.madinahIncluded === 'Yes';
+  const showZiyaratSection = data.showZiyaratDetails && (showMakkah || showMadinah);
+
+  let ziyaratRowsHtml = '';
+  if (showMakkah) {
+    ziyaratRowsHtml += `
+      <tr>
+        <td style="font-weight: 900; color: #047857;">Makkah</td>
+        <td style="font-weight: 800;">Yes</td>
+        <td style="font-weight: 800;">${formatDateToDMY(data.ziyarat.makkahDate)}</td>
+      </tr>
+    `;
+  }
+  if (showMadinah) {
+    ziyaratRowsHtml += `
+      <tr style="${showMakkah ? 'background-color: #f9fafb;' : ''}">
+        <td style="font-weight: 900; color: #047857;">Madinah</td>
+        <td style="font-weight: 800;">Yes</td>
+        <td style="font-weight: 800;">${formatDateToDMY(data.ziyarat.madinahDate)}</td>
+      </tr>
+    `;
+  }
+
+  let letterheadLogoHtml = '';
   if (agencySettings.logo && (agencySettings.logo.startsWith('data:image') || agencySettings.logo.startsWith('http') || agencySettings.logo.includes('/'))) {
-    logoHtml = `<img src="${agencySettings.logo}" style="max-height: 48px; max-width: 160px; object-fit: contain;" alt="Logo">`;
+    letterheadLogoHtml = `<img src="${agencySettings.logo}" style="max-height: 80px; max-width: 200px; object-fit: contain; margin-bottom: 2px;" alt="Logo">`;
   } else {
-    logoHtml = `
-      <div style="font-size: 16px; font-weight: 900; color: #047857; text-transform: uppercase;">
-        ${agencySettings.agencyName || 'SAUDI PAK GROUP OF TRAVELS'}
-      </div>`;
+    letterheadLogoHtml = `<i class="fa-solid fa-kaaba" style="color: #047857; font-size: 40px; margin-bottom: 4px;"></i>`;
   }
 
   return `
@@ -300,7 +377,8 @@ function buildSelfContainedPdfHtml(data, agencySettings, qrDataUrl, baseUrl) {
   <html lang="en">
   <head>
     <meta charset="UTF-8">
-    <meta name="viewport" content="width=794, initial-scale=1.0">
+    <meta name="viewport" content="${isWebView ? 'width=device-width, initial-scale=1.0' : 'width=794, initial-scale=1.0'}">
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
     ${baseUrl ? `<base href="${baseUrl}/">` : ''}
     <style>
       @import url('https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@300;400;500;600;700;800&family=Noto+Naskh+Arabic:wght@400;600;700&display=swap');
@@ -318,31 +396,36 @@ function buildSelfContainedPdfHtml(data, agencySettings, qrDataUrl, baseUrl) {
         font-family: 'Noto Naskh Arabic', 'Times New Roman', serif !important;
       }
       html, body {
-        width: 794px !important;
+        width: ${isWebView ? '100% !important; max-width: 100%' : '794px'} !important;
+        height: auto !important;
         margin: 0 auto !important;
         padding: 0 !important;
-        background: #ffffff !important;
+        background: ${isWebView ? '#f1f5f9' : '#ffffff'} !important;
         color: #111827 !important;
         font-size: 12px !important;
         line-height: 1.35 !important;
         -webkit-print-color-adjust: exact !important;
         print-color-adjust: exact !important;
-        overflow: hidden !important;
+        overflow: visible !important;
       }
       
       .pdf-container, .voucher-container {
         position: relative !important;
-        width: 794px !important;
+        width: ${isWebView ? '100% !important; max-width: 800px' : '794px'} !important;
+        min-height: ${isWebView ? 'auto' : '1123px'} !important;
+        height: auto !important;
         box-sizing: border-box !important;
         padding: 20px !important;
-        margin: 0 auto !important;
+        margin: ${isWebView ? '20px auto' : '0 auto'} !important;
         background: #ffffff !important;
-        overflow: hidden !important;
-        page-break-after: avoid !important;
-        page-break-inside: avoid !important;
+        overflow: visible !important;
+        page-break-after: auto !important;
+        page-break-before: auto !important;
+        page-break-inside: auto !important;
         display: flex !important;
         flex-direction: column !important;
         justify-content: space-between !important;
+        ${isWebView ? 'border-radius: 12px !important; box-shadow: 0 10px 15px -3px rgba(0,0,0,0.1), 0 4px 6px -2px rgba(0,0,0,0.05) !important; border: 1px solid #e2e8f0 !important;' : ''}
       }
       .watermark-overlay {
         position: absolute !important;
@@ -357,10 +440,10 @@ function buildSelfContainedPdfHtml(data, agencySettings, qrDataUrl, baseUrl) {
         opacity: 0.18 !important;
       }
       
-      .header { display: flex; justify-content: space-between; align-items: center; padding-bottom: 8px; border-bottom: 2px solid #047857; margin-bottom: 8px; }
-      .brand-title { font-size: 15px; font-weight: 900; color: #047857; text-transform: uppercase; }
-      .brand-tagline { font-size: 10px; color: #374151; font-weight: bold; }
-      .company-info { text-align: right; font-size: 9.5px; color: #1f2937; line-height: 1.35; font-weight: 600; }
+      .header { display: flex; flex-direction: column; align-items: center; justify-content: center; text-align: center; padding-bottom: 8px; border-bottom: 2px solid #047857; margin-bottom: 8px; width: 100%; position: relative; }
+      .brand-title { font-size: 13.5px; font-weight: 900; color: #047857; text-transform: uppercase; margin-top: 2px; line-height: 1.25; }
+      .brand-tagline { font-size: 9.5px; color: #374151; font-weight: bold; margin-top: 1px; }
+      .company-info { display: flex; flex-wrap: wrap; align-items: center; justify-content: center; gap: 4px 15px; font-size: 9px; color: #1f2937; font-weight: bold; width: 100%; border-top: 1px solid #e5e7eb; padding-top: 6px; margin-top: 4px; }
       
       .banner { background-color: #047857; color: white; padding: 6px 10px; font-weight: 900; border-radius: 4px; display: flex; justify-content: space-between; align-items: center; margin-bottom: 8px; font-size: 11px; }
       .banner-ref { color: #fef08a; font-family: monospace; font-size: 12px; font-weight: bold; }
@@ -372,7 +455,19 @@ function buildSelfContainedPdfHtml(data, agencySettings, qrDataUrl, baseUrl) {
       
       table { width: 100%; border-collapse: collapse; margin-bottom: 8px; font-size: 9.5px; table-layout: fixed; }
       th { background-color: #f3f4f6; color: #111827; text-align: left; padding: 4px 6px; font-weight: 800; border: 1px solid #9ca3af; font-size: 8.5px; text-transform: uppercase; }
-      td { padding: 4px 6px; border: 1px solid #d1d5db; word-wrap: break-word; font-size: 9.5px; color: #111827; }
+      td { padding: 4px 6px; border: 1px solid #d1d5db; word-wrap: break-word !important; word-break: break-word !important; white-space: normal !important; font-size: 9.5px; color: #111827; }
+      
+      tr {
+        page-break-inside: avoid !important;
+        break-inside: avoid !important;
+      }
+      thead {
+        display: table-header-group !important;
+      }
+      .card, table, .info-grid {
+        page-break-inside: avoid !important;
+        break-inside: avoid !important;
+      }
       
       .section-title { font-size: 9.5px; font-weight: 900; color: #ffffff; background-color: #065f46; padding: 3px 8px; border-radius: 3px 3px 0 0; text-transform: uppercase; display: flex; justify-content: space-between; }
       
@@ -393,6 +488,14 @@ function buildSelfContainedPdfHtml(data, agencySettings, qrDataUrl, baseUrl) {
     </style>
   </head>
   <body>
+    ${isWebView ? `
+      <div style="background-color: #065f46; color: white; padding: 12px 20px; font-weight: 800; text-align: center; font-size: 13px; text-transform: uppercase; letter-spacing: 1px; display: flex; justify-content: center; align-items: center; gap: 8px; border-bottom: 3px solid #047857; font-family: 'Plus Jakarta Sans', sans-serif;">
+        <svg style="width: 16px; height: 16px; fill: #fef08a;" viewBox="0 0 24 24">
+          <path d="M12 2C6.5 2 2 6.5 2 12s4.5 10 10 10 10-4.5 10-10S17.5 2 12 2zm-2 15l-5-5 1.41-1.41L10 14.17l7.59-7.59L19 8l-9 9z"/>
+        </svg>
+        <span>VERIFIED OFFICIAL VOUCHER - SAUDI PAK TRAVELS</span>
+      </div>
+    ` : ''}
     <div class="voucher-container">
       <div class="watermark-overlay" style="color: ${data.status === 'APPROVED' ? '#00875A' : '#EF4444'} !important;">
         <div style="font-family: 'Impact', 'Arial Black', 'Arial', sans-serif !important; font-size: ${data.status === 'APPROVED' ? '85pt' : '70pt'} !important; font-weight: 950 !important; border: 8px double currentColor !important; padding: 15px 40px !important; border-radius: 12px !important; letter-spacing: 6px !important; white-space: nowrap !important; line-height: 1.1 !important; text-transform: uppercase !important; display: inline-block !important;">
@@ -401,17 +504,25 @@ function buildSelfContainedPdfHtml(data, agencySettings, qrDataUrl, baseUrl) {
       </div>
       <div>
         <div class="header">
-          <div>
-            ${logoHtml}
+          <!-- Booking Agent Badge on the Top Left -->
+          <div class="booking-agent-header" style="position: absolute; left: 0; top: 4px; text-align: left; font-size: 9px; color: #111827; background-color: #f0fdf4; border: 1px solid #a7f3d0; padding: 10px 18px; border-radius: 4px; line-height: 1.3;">
+            <span style="display: block; font-size: 11px; text-transform: uppercase; color: #047857; font-weight: 800; letter-spacing: 0.5px;">Booking By</span>
+            <strong style="color: #065f46; font-weight: 900; font-size: 16.5px;">${data.bookingAgentName || '-'}</strong>
+          </div>
+          <!-- QR Code Badge on the Top Right -->
+          <div class="qr-header-box" style="position: absolute; right: 0; top: 4px; display: flex; align-items: center; gap: 10px; background-color: #ffffff; border: 1px solid #d1d5db; padding: 8px 12px; border-radius: 4px; line-height: 1.25;">
+            ${qrDataUrl ? `<img src="${qrDataUrl}" style="width: 72px; height: 72px; object-fit: contain;" alt="QR Verification">` : ''}
+            <div style="font-size: 9px; color: #374151; text-align: left;">
+              <strong style="color: #047857; display: block; font-size: 10.5px; text-transform: uppercase; font-weight: 800;">VERIFIED</strong>
+              Scan to verify<br>
+              <span style="font-family: monospace; font-weight: 900; color: #111827; font-size: 9px;">${data.id}</span>
+            </div>
+          </div>
+          <div style="display: flex; flex-direction: column; align-items: center;">
+            ${letterheadLogoHtml}
             <div class="brand-title">${agencySettings.agencyName || 'SAUDI PAK GROUP OF TRAVELS'}</div>
             <div class="brand-tagline">${agencySettings.tagline || 'Official Services Voucher'}</div>
             ${agencySettings.licenseNo ? `<div style="font-size: 8.5px; color: #047857; font-weight: 800; margin-top: 2px;">Lic / IATA: ${agencySettings.licenseNo}</div>` : ''}
-          </div>
-          <div class="company-info">
-            <p style="font-weight: 900; color: #111827;">${agencySettings.phone1 || ''} ${agencySettings.phone2 ? ' | ' + agencySettings.phone2 : ''}</p>
-            <p>${agencySettings.email || ''}</p>
-            <p>${agencySettings.website || ''}</p>
-            <p style="max-width: 200px; font-weight: 600;">${agencySettings.address || ''}</p>
           </div>
         </div>
 
@@ -426,19 +537,23 @@ function buildSelfContainedPdfHtml(data, agencySettings, qrDataUrl, baseUrl) {
         <div class="info-grid">
           <div class="info-item">
             <span class="info-label">Family Head / Leader</span>
-            <span class="info-value">${data.familyHead}</span>
+            <span class="info-value" style="display: block; font-weight: 900; color: #111827; font-size: 11px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;">${data.familyHead}</span>
           </div>
           <div class="info-item">
             <span class="info-label">Package Name</span>
-            <span class="info-value" style="color: #047857;">${data.packageName}</span>
+            <span class="info-value" style="display: block; font-weight: 900; color: #047857; font-size: 11px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;">${data.packageName}</span>
           </div>
           <div class="info-item">
             <span class="info-label">PAX Breakdown</span>
-            <span class="info-value">${data.adultsCount || 0} Adults, ${data.childrenCount || 0} Child, ${data.infantsCount || 0} Inf</span>
+            <span class="info-value" style="display: block; font-weight: 900; color: #111827; font-size: 10px;">${data.adultsCount || 0} Adults, ${data.childrenCount || 0} Child, ${data.infantsCount || 0} Inf</span>
           </div>
-          <div class="info-item">
-            <span class="info-label">Total PAX</span>
-            <span class="info-value" style="background: #047857; color: white; padding: 2px 6px; border-radius: 3px; font-size: 9.5px;">${data.totalPax} Person(s)</span>
+          <div class="info-item" style="text-align: center;">
+            <span class="info-label" style="text-align: center;">Total PAX</span>
+            <span class="info-value" style="display: inline-block; background: #047857; color: white; padding: 2px 6px; border-radius: 3px; font-size: 9.5px; font-weight: 900;">${data.totalPax} Person(s)</span>
+          </div>
+          <div class="info-item" style="text-align: center;">
+            <span class="info-label" style="text-align: center;">Total Package Days</span>
+            <span class="info-value" style="display: inline-block; background: #065f46; color: white; padding: 2px 6px; border-radius: 3px; font-size: 9.5px; font-weight: 950; margin-top: 2px;">${calculatedPackageDays > 0 ? calculatedPackageDays + ' Days' : '-'}</span>
           </div>
         </div>
 
@@ -453,14 +568,13 @@ function buildSelfContainedPdfHtml(data, agencySettings, qrDataUrl, baseUrl) {
               <tr>
                 <th style="width: 5%; text-align: center;">#</th>
                 <th style="width: 20%;">Passport #</th>
-                <th style="width: 35%;">Passenger Name</th>
+                <th style="width: 50%;">Passenger Name</th>
                 <th style="width: 12%; text-align: center;">Gender</th>
                 <th style="width: 13%; text-align: center;">Type</th>
-                <th style="width: 15%; text-align: center;">Bed Type</th>
               </tr>
             </thead>
             <tbody>
-              ${passBasicRowsHtml || '<tr><td colspan="6" style="text-align:center; font-weight: bold;">No passenger details listed</td></tr>'}
+              ${passBasicRowsHtml || '<tr><td colspan="5" style="text-align:center; font-weight: bold;">No passenger details listed</td></tr>'}
             </tbody>
           </table>
         </div>
@@ -496,17 +610,18 @@ function buildSelfContainedPdfHtml(data, agencySettings, qrDataUrl, baseUrl) {
           <table>
             <thead>
               <tr>
-                <th style="width: 13%;">City</th>
-                <th style="width: 27%;">Hotel Name</th>
-                <th style="width: 15%;">Room Type</th>
-                <th style="width: 15%;">Meal Plan</th>
+                <th style="width: 12%;">City</th>
+                <th style="width: 23%;">Hotel Name</th>
+                <th style="width: 14%;">Room Type</th>
+                <th style="width: 13%;">Meal Plan</th>
                 <th style="width: 11%;">Check-In</th>
                 <th style="width: 11%;">Check-Out</th>
-                <th style="width: 8%; text-align: center;">Nights</th>
+                <th style="width: 10%; text-align: center;">Bed Type</th>
+                <th style="width: 6%; text-align: center;">Nights</th>
               </tr>
             </thead>
             <tbody>
-              ${hotelRowsHtml || '<tr><td colspan="7" style="text-align:center; font-weight: bold;">No accommodation details listed</td></tr>'}
+              ${hotelRowsHtml || '<tr><td colspan="8" style="text-align:center; font-weight: bold;">No accommodation details listed</td></tr>'}
             </tbody>
           </table>
         </div>
@@ -519,12 +634,13 @@ function buildSelfContainedPdfHtml(data, agencySettings, qrDataUrl, baseUrl) {
           <table>
             <thead>
               <tr>
-                <th style="width: 12%;">Sector</th>
-                <th style="width: 22%;">Airline</th>
-                <th style="width: 14%;">Flight No</th>
-                <th style="width: 18%;">Date</th>
-                <th style="width: 18%;">Time</th>
-                <th style="width: 16%;">Route</th>
+                <th style="width: 10%;">Sector</th>
+                <th style="width: 18%;">Airline</th>
+                <th style="width: 12%;">Flight No</th>
+                <th style="width: 14%;">Route</th>
+                <th style="width: 14%;">Date</th>
+                <th style="width: 16%; text-align: center;">Departure Time</th>
+                <th style="width: 16%; text-align: center;">Arrival Time</th>
               </tr>
             </thead>
             <tbody>
@@ -532,22 +648,25 @@ function buildSelfContainedPdfHtml(data, agencySettings, qrDataUrl, baseUrl) {
                 <td style="font-weight: 900; color: #047857;">Departure</td>
                 <td style="font-weight: 800;">${data.flight ? data.flight.departureAirline || '-' : '-'}</td>
                 <td style="font-weight: 900; font-family: monospace;">${data.flight ? data.flight.departureFlightNo || '-' : '-'}</td>
-                <td style="font-weight: 800;">${formatDateToDMY(data.flight ? data.flight.departureDate : '')}</td>
-                <td style="font-weight: 800;">${data.flight ? data.flight.departureTime || '-' : '-'}</td>
                 <td style="font-weight: 900; color: #065f46;">${data.flight ? data.flight.departureRoute || '-' : '-'}</td>
+                <td style="font-weight: 800;">${formatDateToDMY(data.flight ? data.flight.departureDate : '')}</td>
+                <td style="font-weight: 800; text-align: center;">${data.flight ? data.flight.departureTime || '-' : '-'}</td>
+                <td style="font-weight: 800; text-align: center;">${data.flight ? data.flight.departureArrivalTime || '-' : '-'}</td>
               </tr>
               <tr style="background-color: #f9fafb;">
                 <td style="font-weight: 900; color: #047857;">Return</td>
                 <td style="font-weight: 800;">${data.flight ? data.flight.returnAirline || '-' : '-'}</td>
                 <td style="font-weight: 900; font-family: monospace;">${data.flight ? data.flight.returnFlightNo || '-' : '-'}</td>
-                <td style="font-weight: 800;">${formatDateToDMY(data.flight ? data.flight.returnDate : '')}</td>
-                <td style="font-weight: 800;">${data.flight ? data.flight.returnTime || '-' : '-'}</td>
                 <td style="font-weight: 900; color: #065f46;">${data.flight ? data.flight.returnRoute || '-' : '-'}</td>
+                <td style="font-weight: 800;">${formatDateToDMY(data.flight ? data.flight.returnDate : '')}</td>
+                <td style="font-weight: 800; text-align: center;">${data.flight ? data.flight.returnTime || '-' : '-'}</td>
+                <td style="font-weight: 800; text-align: center;">${data.flight ? data.flight.returnArrivalTime || '-' : '-'}</td>
               </tr>
             </tbody>
           </table>
         </div>
 
+        ${showZiyaratSection ? `
         <!-- 4.5. ZIYARAT SCHEDULE TABLE -->
         <div style="margin-bottom: 8px;">
           <div class="section-title" style="background-color: #065f46;">
@@ -562,46 +681,46 @@ function buildSelfContainedPdfHtml(data, agencySettings, qrDataUrl, baseUrl) {
               </tr>
             </thead>
             <tbody>
+              ${ziyaratRowsHtml}
+            </tbody>
+          </table>
+        </div>` : ''}
+
+        <!-- 5. TRANSPORT & TRANSFER DETAILS TABLE -->
+        <div style="margin-bottom: 8px;">
+          <div class="section-title" style="background-color: #047857;">
+            <span>TRANSPORT & TRANSFER DETAILS</span>
+          </div>
+          <table>
+            <thead>
               <tr>
-                <td style="font-weight: 900; color: #047857;">Makkah</td>
-                <td style="font-weight: 800;">${data.ziyarat ? data.ziyarat.makkahIncluded || 'No' : 'No'}</td>
-                <td style="font-weight: 800;">${formatDateToDMY(data.ziyarat ? data.ziyarat.makkahDate : '')}</td>
+                <th style="width: 14%;">Date</th>
+                <th style="width: 20%;">Company</th>
+                <th style="width: 22%;">Vehicle</th>
+                <th style="width: 16%;">Route No</th>
+                <th style="width: 28%;">Transport Route</th>
               </tr>
-              <tr style="background-color: #f9fafb;">
-                <td style="font-weight: 900; color: #047857;">Madinah</td>
-                <td style="font-weight: 800;">${data.ziyarat ? data.ziyarat.madinahIncluded || 'No' : 'No'}</td>
-                <td style="font-weight: 800;">${formatDateToDMY(data.ziyarat ? data.ziyarat.madinahDate : '')}</td>
+            </thead>
+            <tbody>
+              <tr>
+                <td style="font-weight: 800; color: #111827;">${data.transport ? formatDateToDMY(data.transport.date) : '-'}</td>
+                <td style="font-weight: 800; color: #111827;">${data.transport ? data.transport.transporter || '-' : '-'}</td>
+                <td style="font-weight: 800; color: #111827;">${data.transport ? data.transport.vehicleType || '-' : '-'}</td>
+                <td style="font-weight: 900; color: #047857; font-family: monospace;">${data.transport ? data.transport.routeNo || '-' : '-'}</td>
+                <td style="font-weight: 800; color: #111827;">${data.transport ? data.transport.route || '-' : '-'}</td>
               </tr>
             </tbody>
           </table>
         </div>
 
-        <!-- 5. TRANSPORT & ROUTE NO CARD -->
-        <div class="card">
-          <div class="card-header">TRANSPORT & TRANSFER DETAILS</div>
-          <div class="card-body">
-            <p><strong>Date:</strong> ${data.transport ? formatDateToDMY(data.transport.date) : '-'} &nbsp;|&nbsp; <strong>Company:</strong> ${data.transport ? data.transport.transporter || '-' : '-'}</p>
-            <p><strong>Vehicle:</strong> ${data.transport ? data.transport.vehicleType || '-' : '-'}</p>
-            <p><strong>Route No:</strong> <span style="font-family: monospace; font-weight: 900; color: #047857;">${data.transport ? data.transport.routeNo || '-' : '-'}</span> &nbsp;|&nbsp; <strong>Transport Route:</strong> ${data.transport ? data.transport.route || '-' : '-'}</p>
-          </div>
-        </div>
-
-        <!-- 6. HELPLINES & 85px QR CODE STAMP -->
+        <!-- 6. HELPLINES -->
         <div class="helpline-qr-bar">
           <div>
             <div class="helpline-title">24/7 KSA EMERGENCY HELPLINES:</div>
-            <div class="helpline-numbers">
+            <div class="helpline-numbers" style="display: flex; gap: 20px;">
               <span>Makkah: <strong style="color: #047857;">${data.helplines ? data.helplines.makkah || '-' : '-'}</strong></span>
               <span>Medina: <strong style="color: #047857;">${data.helplines ? data.helplines.medina || '-' : '-'}</strong></span>
               <span>Transport: <strong style="color: #047857;">${data.helplines ? data.helplines.transport || '-' : '-'}</strong></span>
-            </div>
-          </div>
-          <div class="qr-box">
-            ${qrDataUrl ? `<img src="${qrDataUrl}" style="width: 85px; height: 85px; object-fit: contain;" alt="QR Verification">` : ''}
-            <div style="font-size: 8.5px; color: #374151; line-height: 1.35;">
-              <strong style="color: #047857; display: block; font-size: 9.5px; text-transform: uppercase;">OFFICIAL VERIFIED</strong>
-              Scan to verify<br>
-              <span style="font-family: monospace; font-weight: 900; color: #111827;">${data.id}</span>
             </div>
           </div>
         </div>
@@ -624,8 +743,16 @@ function buildSelfContainedPdfHtml(data, agencySettings, qrDataUrl, baseUrl) {
           </div>
         </div>
 
-        <div class="footer">
-          <span>Prepared By: <strong>${formatCreatorName(data.createdBy, data.createdByRole)}</strong></span>
+        <!-- Contacts Bar in Footer -->
+        <div class="company-info-footer" style="display: flex; flex-wrap: wrap; align-items: center; justify-content: center; gap: 4px 15px; font-size: 9px; color: #1f2937; font-weight: bold; width: 100%; border-top: 1px solid #e5e7eb; border-bottom: 1px solid #e5e7eb; padding: 4px 0; margin-top: 6px; margin-bottom: 6px;">
+          ${agencySettings.phone1 || agencySettings.phone2 ? `<span><i class="fa-solid fa-phone" style="color: #047857; margin-right: 4px;"></i>${agencySettings.phone1 || ''}${agencySettings.phone2 ? ' | ' + agencySettings.phone2 : ''}</span>` : ''}
+          ${agencySettings.email ? `<span><i class="fa-solid fa-envelope" style="color: #047857; margin-right: 4px;"></i>${agencySettings.email}</span>` : ''}
+          ${agencySettings.website ? `<span><i class="fa-solid fa-globe" style="color: #047857; margin-right: 4px;"></i>${agencySettings.website}</span>` : ''}
+          ${agencySettings.address ? `<span><i class="fa-solid fa-location-dot" style="color: #047857; margin-right: 4px;"></i>${agencySettings.address}</span>` : ''}
+        </div>
+
+        <div class="footer" style="border-top: none; padding-top: 0;">
+          <span>Prepared By: <strong>${data.agentName || formatCreatorName(data.createdBy, data.createdByRole)}</strong></span>
           <span>Generated via Travel Voucher Generator System</span>
           <span>Page 1 of 1</span>
         </div>
@@ -752,23 +879,43 @@ app.post('/api/generate-pdf', async (req, res) => {
       formData.status = status;
       formData.createdBy = createdBy;
       formData.createdByRole = createdByRole;
+      
+      const isReqAdmin = (requesterRole.split(':')[0] === 'admin');
+      if (!isReqAdmin) {
+        formData.bookingAgentName = resolveAgentName(requesterEmail, requesterRole);
+      }
     }
 
     // Upsert voucher into Supabase vouchers table
     if (formData && formData.id) {
       try {
-        await supabase
+        const payload = {
+          id: formData.id,
+          voucher_ref: formData.voucherRef || formData.id,
+          family_head: formData.familyHead,
+          package_name: formData.packageName,
+          voucher_date: formData.voucherDate,
+          status: status,
+          created_by: createdBy,
+          form_data: formData
+        };
+
+        const { error } = await supabase
           .from('vouchers')
           .upsert({
-            id: formData.id,
-            voucher_ref: formData.voucherRef || formData.id,
-            family_head: formData.familyHead,
-            package_name: formData.packageName,
-            voucher_date: formData.voucherDate,
-            status: status,
-            created_by: createdBy,
-            form_data: formData
+            ...payload,
+            booking_agent_name: formData.bookingAgentName || null
           });
+
+        if (error) {
+          // Fallback if booking_agent_name column does not exist yet
+          if (error.message.includes('booking_agent_name') || error.code === 'P0002' || error.message.includes('does not exist')) {
+            console.warn("booking_agent_name column does not exist in DB yet, falling back to saving in form_data JSON");
+            await supabase.from('vouchers').upsert(payload);
+          } else {
+            throw error;
+          }
+        }
       } catch (dbErr) {
         console.error("Supabase upsert during generate-pdf failed:", dbErr.message);
       }
@@ -791,7 +938,9 @@ app.post('/api/generate-pdf', async (req, res) => {
     try {
       if (formData.id) {
         const voucher_ref = formData.voucherRef || formData.id || '';
-        const baseUrl = process.env.PUBLIC_APP_URL || 'https://saudipak-vouchers.vercel.app';
+        const protocol = req.headers['x-forwarded-proto'] || req.protocol || 'http';
+        const host = req.headers.host;
+        const baseUrl = process.env.PUBLIC_APP_URL || `${protocol}://${host}`;
         const verifyUrl = `${baseUrl}/verify?voucher=${voucher_ref}`;
 
         qrDataUrl = await QRCode.toDataURL(verifyUrl, {
@@ -909,11 +1058,15 @@ app.post('/api/auth/login', async (req, res) => {
       return res.status(401).json({ success: false, message: 'Invalid email or password' });
     }
 
+    const nameMap = readJSONFile(USER_NAMES_FILE, {});
+    const fullName = nameMap[data.email.toLowerCase()] || '';
+
     res.json({
       success: true,
       user: {
         email: data.email,
-        role: data.role
+        role: data.role,
+        fullName: fullName
       }
     });
   } catch (err) {
@@ -922,8 +1075,39 @@ app.post('/api/auth/login', async (req, res) => {
   }
 });
 
+app.get('/api/booking-agents', async (req, res) => {
+  try {
+    const { data, error } = await supabase
+      .from('app_users')
+      .select('email, role')
+      .order('email', { ascending: true });
+
+    if (error) throw error;
+
+    const nameMap = readJSONFile(USER_NAMES_FILE, {});
+    const agents = (data || [])
+      .filter(u => {
+        const r = u.role || '';
+        return r === 'admin' || r.startsWith('staff_approved');
+      })
+      .map(u => {
+        const parts = u.role.split(':');
+        const fullName = parts[1] || nameMap[u.email.toLowerCase()] || u.email.split('@')[0];
+        return {
+          email: u.email,
+          name: fullName
+        };
+      });
+
+    res.json({ success: true, agents });
+  } catch (err) {
+    console.error("Booking Agents fetch error:", err.message);
+    res.status(500).json({ success: false, message: err.message });
+  }
+});
+
 app.get('/api/auth/users', async (req, res) => {
-  const requesterRole = req.headers['x-user-role'];
+  const requesterRole = req.headers['x-user-role'] || '';
   if (requesterRole !== 'admin') {
     return res.status(403).json({ success: false, message: 'Access denied: Admin only' });
   }
@@ -935,7 +1119,15 @@ app.get('/api/auth/users', async (req, res) => {
       .order('email', { ascending: true });
 
     if (error) throw error;
-    res.json({ success: true, users: data });
+
+    // Merge names locally
+    const nameMap = readJSONFile(USER_NAMES_FILE, {});
+    const usersWithNames = data.map(u => ({
+      ...u,
+      fullName: nameMap[u.email.toLowerCase()] || ''
+    }));
+
+    res.json({ success: true, users: usersWithNames });
   } catch (err) {
     console.error("Auth Get Users Error:", err.message);
     res.status(500).json({ success: false, message: err.message });
@@ -943,17 +1135,18 @@ app.get('/api/auth/users', async (req, res) => {
 });
 
 app.post('/api/auth/users', async (req, res) => {
-  const requesterRole = req.headers['x-user-role'];
+  const requesterRole = req.headers['x-user-role'] || '';
   if (requesterRole !== 'admin') {
     return res.status(403).json({ success: false, message: 'Access denied: Admin only' });
   }
 
-  const { email, password, role } = req.body;
+  const { email, password, role, fullName } = req.body;
   if (!email || !password || !role) {
     return res.status(400).json({ success: false, message: 'Missing fields' });
   }
 
   try {
+    // Insert into DB with clean role (satisfies database check constraints)
     const { error } = await supabase
       .from('app_users')
       .insert({
@@ -963,6 +1156,14 @@ app.post('/api/auth/users', async (req, res) => {
       });
 
     if (error) throw error;
+
+    // Save name mapping locally
+    if (fullName) {
+      const nameMap = readJSONFile(USER_NAMES_FILE, {});
+      nameMap[email.trim().toLowerCase()] = fullName.trim();
+      writeJSONFile(USER_NAMES_FILE, nameMap);
+    }
+
     res.json({ success: true, message: 'User created successfully' });
   } catch (err) {
     console.error("Auth Create User Error:", err.message);
@@ -971,19 +1172,33 @@ app.post('/api/auth/users', async (req, res) => {
 });
 
 app.delete('/api/auth/users/:id', async (req, res) => {
-  const requesterRole = req.headers['x-user-role'];
+  const requesterRole = req.headers['x-user-role'] || '';
   if (requesterRole !== 'admin') {
     return res.status(403).json({ success: false, message: 'Access denied: Admin only' });
   }
 
   const { id } = req.params;
   try {
+    // Fetch email first to clean up local mapping
+    const { data: targetUser } = await supabase
+      .from('app_users')
+      .select('email')
+      .eq('id', id)
+      .single();
+
     const { error } = await supabase
       .from('app_users')
       .delete()
       .eq('id', id);
 
     if (error) throw error;
+
+    if (targetUser && targetUser.email) {
+      const nameMap = readJSONFile(USER_NAMES_FILE, {});
+      delete nameMap[targetUser.email.toLowerCase()];
+      writeJSONFile(USER_NAMES_FILE, nameMap);
+    }
+
     res.json({ success: true, message: 'User deleted successfully' });
   } catch (err) {
     console.error("Auth Delete User Error:", err.message);
@@ -994,7 +1209,7 @@ app.delete('/api/auth/users/:id', async (req, res) => {
 // 11. POST Approve Voucher
 app.post('/api/vouchers/:id/approve', async (req, res) => {
   const { id } = req.params;
-  const requesterRole = req.headers['x-user-role'];
+  const requesterRole = req.headers['x-user-role'] || '';
 
   if (requesterRole !== 'admin' && requesterRole !== 'staff_approved') {
     return res.status(403).json({ success: false, message: 'Access denied: Authorization required' });
@@ -1097,104 +1312,40 @@ app.get('/verify', async (req, res) => {
     }
 
     const formData = voucher.form_data || {};
-    const isApproved = voucher.status === 'APPROVED';
-    const status = voucher.status || 'NOT APPROVED';
     const voucherRef = voucher.voucher_ref || voucher.id;
-    const familyHead = voucher.family_head || 'Guest Family';
-    const totalPax = formData.totalPax || 1;
-    const verificationTime = new Date().toLocaleString('en-US', { timeZone: 'UTC' }) + ' UTC';
 
-    // Extract dates
-    let departureDate = '-';
-    let returnDate = '-';
-    if (formData.flight) {
-      departureDate = formData.flight.departureDate || '-';
-      returnDate = formData.flight.returnDate || '-';
-    }
-
-    // Date formatting helper if not empty
-    const formatStrDate = (str) => {
-      if (!str || str === '-') return '-';
-      const parts = str.split('-');
-      if (parts.length === 3) {
-        const [year, month, day] = parts;
-        return `${day}/${month}/${year}`;
-      }
-      return str;
+    // Load agency settings
+    const savedSettings = readJSONFile(SETTINGS_FILE, {});
+    const agencySettings = savedSettings && savedSettings.agencyName ? savedSettings : {
+      agencyName: 'SAUDI PAK GROUP OF TRAVELS',
+      tagline: 'Hajj & Umrah Pilgrimage',
+      phone1: '03169666666',
+      phone2: '+966 50 9876543',
+      email: 'saudipakavi@gmail.com',
+      website: 'www.saudipak.com.pk',
+      address: 'Suite # 6-7, Hajvari Arcade, Kutchery Road, Multan',
+      licenseNo: 'DTS-4492'
     };
 
-    res.send(`
-      <!DOCTYPE html>
-      <html lang="en">
-      <head>
-        <meta charset="UTF-8">
-        <meta name="viewport" content="width=device-width, initial-scale=1.0">
-        <title>Voucher Verification | Saudi Pak Travels</title>
-        <script src="https://cdn.tailwindcss.com"></script>
-        <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
-      </head>
-      <body class="flex items-center justify-center min-h-screen bg-slate-100 p-4">
-        <div class="w-full max-w-md bg-white rounded-2xl shadow-xl overflow-hidden border border-slate-100">
-          <!-- Header Branding -->
-          <div class="bg-gradient-to-r from-emerald-800 to-teal-800 p-6 text-center text-white relative">
-            <div class="absolute top-4 right-4">
-              <i class="fa-solid fa-kaaba text-amber-300 text-3xl opacity-20"></i>
-            </div>
-            <h1 class="text-lg font-black tracking-wider uppercase">Saudi Pak Travels</h1>
-            <p class="text-xs text-emerald-100 font-bold mt-1">Official Voucher Verification Service</p>
-          </div>
+    const protocol = req.headers['x-forwarded-proto'] || req.protocol || 'http';
+    const host = req.headers.host;
+    const baseUrl = process.env.PUBLIC_APP_URL || `${protocol}://${host}`;
 
-          <!-- Main Content -->
-          <div class="p-6 space-y-6">
-            
-            <!-- Verification Status Badge -->
-            <div class="text-center">
-              <div class="inline-flex items-center justify-center space-x-2 px-4 py-2 rounded-full font-black text-sm uppercase tracking-wider ${
-                isApproved 
-                  ? 'bg-emerald-100 text-emerald-800 border border-emerald-300' 
-                  : 'bg-rose-100 text-rose-800 border border-rose-300'
-              }">
-                <i class="fa-solid ${isApproved ? 'fa-circle-check text-emerald-600' : 'fa-circle-xmark text-rose-600'} text-base"></i>
-                <span>${status}</span>
-              </div>
-              <p class="text-[10px] text-slate-400 font-bold mt-2 uppercase tracking-widest">Verification Status</p>
-            </div>
+    let qrDataUrl = '';
+    try {
+      const verifyUrl = `${baseUrl}/verify?voucher=${voucherRef}`;
+      qrDataUrl = await QRCode.toDataURL(verifyUrl, {
+        errorCorrectionLevel: 'M',
+        margin: 2,
+        width: 150,
+        color: { dark: '#047857', light: '#ffffff' }
+      });
+    } catch (qrErr) {
+      console.error("QR Code generation in verify route failed:", qrErr);
+    }
 
-            <!-- Voucher Metadata Card -->
-            <div class="bg-slate-50 rounded-xl p-4 border border-slate-200/60 space-y-3.5 text-xs font-semibold">
-              <div class="flex justify-between border-b border-slate-200/60 pb-2">
-                <span class="text-slate-500">Voucher Reference</span>
-                <span class="font-mono font-bold text-emerald-800">${voucherRef}</span>
-              </div>
-              <div class="flex justify-between border-b border-slate-200/60 pb-2">
-                <span class="text-slate-500">Family Head Name</span>
-                <span class="text-slate-900 font-bold">${familyHead}</span>
-              </div>
-              <div class="flex justify-between border-b border-slate-200/60 pb-2">
-                <span class="text-slate-500">Total Passengers (PAX)</span>
-                <span class="text-slate-900 font-bold">${totalPax} PAX</span>
-              </div>
-              <div class="flex justify-between border-b border-slate-200/60 pb-2">
-                <span class="text-slate-500">Departure Date</span>
-                <span class="text-slate-900 font-bold">${formatStrDate(departureDate)}</span>
-              </div>
-              <div class="flex justify-between">
-                <span class="text-slate-500">Return Date</span>
-                <span class="text-slate-900 font-bold">${formatStrDate(returnDate)}</span>
-              </div>
-            </div>
-
-            <!-- Trust Stamp -->
-            <div class="text-center text-[10px] text-slate-400 font-bold uppercase tracking-wider space-y-1">
-              <p><i class="fa-solid fa-shield-halved text-emerald-600 mr-1"></i> Digitally Signed & Verified Record</p>
-              <p class="text-[8px] font-normal text-slate-400/80">Timestamp: ${verificationTime}</p>
-            </div>
-            
-          </div>
-        </div>
-      </body>
-      </html>
-    `);
+    const fullHtml = buildSelfContainedPdfHtml(formData, agencySettings, qrDataUrl, baseUrl, true);
+    res.send(fullHtml);
   } catch (err) {
     console.error("Verification Route Error:", err.message);
     res.status(500).send("Verification lookup failed.");

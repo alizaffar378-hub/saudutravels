@@ -10,8 +10,10 @@ let voucherDatePicker = null;
 let transportDatePicker = null;
 let depDatePicker = null;
 let depTimePicker = null;
+let depArrivalTimePicker = null;
 let retDatePicker = null;
 let retTimePicker = null;
+let retArrivalTimePicker = null;
 let makkahZiyaratDatePicker = null;
 let madinahZiyaratDatePicker = null;
 
@@ -31,6 +33,24 @@ function safeGetLocalStorage(key, fallback = null) {
 document.addEventListener('DOMContentLoaded', async () => {
   // Listen for navigation state pop events
   window.addEventListener('popstate', checkAuth);
+
+  // Setup Password Show/Hide Toggle
+  const togglePasswordBtn = document.getElementById('togglePasswordVisibility');
+  const loginPasswordInput = document.getElementById('loginPassword');
+  const passwordEyeIcon = document.getElementById('passwordEyeIcon');
+  if (togglePasswordBtn && loginPasswordInput && passwordEyeIcon) {
+    togglePasswordBtn.addEventListener('click', () => {
+      const type = loginPasswordInput.getAttribute('type') === 'password' ? 'text' : 'password';
+      loginPasswordInput.setAttribute('type', type);
+      if (type === 'password') {
+        passwordEyeIcon.classList.remove('fa-eye-slash');
+        passwordEyeIcon.classList.add('fa-eye');
+      } else {
+        passwordEyeIcon.classList.remove('fa-eye');
+        passwordEyeIcon.classList.add('fa-eye-slash');
+      }
+    });
+  }
 
   // Authenticate session and setup display states
   checkAuth();
@@ -69,7 +89,10 @@ document.addEventListener('DOMContentLoaded', async () => {
         altInput: true,
         altFormat: "d/m/Y",
         defaultDate: "2026-08-16",
-        allowInput: true
+        allowInput: true,
+        onChange: function() {
+          calculateAndDisplayPackageDays();
+        }
       });
 
       depTimePicker = flatpickr("#depTime", {
@@ -81,13 +104,25 @@ document.addEventListener('DOMContentLoaded', async () => {
         allowInput: true
       });
 
+      depArrivalTimePicker = flatpickr("#depArrivalTime", {
+        enableTime: true,
+        noCalendar: true,
+        dateFormat: "h:i K",
+        time_24hr: false,
+        defaultDate: "07:30 AM",
+        allowInput: true
+      });
+
       retDatePicker = flatpickr("#retDate", {
         enableTime: false,
         dateFormat: "Y-m-d",
         altInput: true,
         altFormat: "d/m/Y",
         defaultDate: "2026-08-30",
-        allowInput: true
+        allowInput: true,
+        onChange: function() {
+          calculateAndDisplayPackageDays();
+        }
       });
 
       retTimePicker = flatpickr("#retTime", {
@@ -96,6 +131,15 @@ document.addEventListener('DOMContentLoaded', async () => {
         dateFormat: "h:i K",
         time_24hr: false,
         defaultDate: "06:15 PM",
+        allowInput: true
+      });
+
+      retArrivalTimePicker = flatpickr("#retArrivalTime", {
+        enableTime: true,
+        noCalendar: true,
+        dateFormat: "h:i K",
+        time_24hr: false,
+        defaultDate: "09:15 PM",
         allowInput: true
       });
 
@@ -114,6 +158,8 @@ document.addEventListener('DOMContentLoaded', async () => {
         altFormat: "d/m/Y",
         allowInput: true
       });
+      
+      toggleZiyaratSectionVisibility();
     }
 
     // Generate initial Ref ID
@@ -135,6 +181,9 @@ document.addEventListener('DOMContentLoaded', async () => {
       addHotelRow();
     }
 
+    // Calculate initial package days
+    calculateAndDisplayPackageDays();
+
     // Load data from server if session exists
     await initDashboard();
   } catch (err) {
@@ -152,6 +201,9 @@ async function initDashboard() {
 
     // Load Saved Vouchers
     await fetchSavedVouchers();
+
+    // Load Booking Agents
+    await fetchBookingAgents();
 
     // Load System Users if admin
     const user = JSON.parse(session);
@@ -211,6 +263,48 @@ function updateTotalPaxDisplay() {
   if (display) display.innerText = `${total} PAX`;
 }
 
+// --- PACKAGE DAYS CALCULATION ---
+function calculateAndDisplayPackageDays() {
+  const depDateInput = document.getElementById('depDate');
+  const retDateInput = document.getElementById('retDate');
+  const displayVal = document.getElementById('totalPackageDaysDisplay');
+  if (!depDateInput || !retDateInput || !displayVal) return;
+
+  const depVal = depDateInput.value;
+  const retVal = retDateInput.value;
+
+  if (depVal && retVal) {
+    const depDate = new Date(depVal);
+    const retDate = new Date(retVal);
+    if (!isNaN(depDate) && !isNaN(retDate)) {
+      const timeDiff = retDate - depDate;
+      const days = Math.max(0, Math.ceil(timeDiff / (1000 * 3600 * 24))) + 1;
+      displayVal.innerText = `${days} Day(s)`;
+      return;
+    }
+  }
+  displayVal.innerText = '-';
+}
+window.calculateAndDisplayPackageDays = calculateAndDisplayPackageDays;
+
+function adjustPax(type, amount) {
+  const inputId = type + 'Count';
+  const input = document.getElementById(inputId);
+  if (!input) return;
+  
+  let currentVal = parseInt(input.value) || 0;
+  let min = parseInt(input.getAttribute('min')) || 0;
+  let max = parseInt(input.getAttribute('max')) || 100;
+  
+  let newVal = currentVal + amount;
+  if (newVal < min) newVal = min;
+  if (newVal > max) newVal = max;
+  
+  input.value = newVal;
+  updateTotalPaxDisplay();
+}
+window.adjustPax = adjustPax;
+
 // --- PACKAGE NAME CUSTOM INPUT ---
 function handlePackageNameChange() {
   const select = document.getElementById('packageNameSelect');
@@ -237,6 +331,21 @@ function toggleMofaFields() {
     }
   });
 }
+
+function toggleZiyaratSectionVisibility() {
+  const checkbox = document.getElementById('includeZiyaratToggle');
+  const show = checkbox ? checkbox.checked : false;
+  const body = document.getElementById('ziyaratContentBody');
+  if (body) {
+    if (show) {
+      body.classList.remove('hidden');
+    } else {
+      body.classList.add('hidden');
+    }
+  }
+}
+
+
 
 // --- DYNAMIC PASSENGER TABLE ---
 function addPassengerRow(pax = {}, e) {
@@ -267,15 +376,6 @@ function addPassengerRow(pax = {}, e) {
         <option value="Adult" ${pax.type === 'Adult' ? 'selected' : ''}>Adult</option>
         <option value="Child" ${pax.type === 'Child' ? 'selected' : ''}>Child</option>
         <option value="Infant" ${pax.type === 'Infant' ? 'selected' : ''}>Infant</option>
-      </select>
-    </td>
-    <td>
-      <select class="w-full border border-slate-300 rounded p-1 text-xs">
-        <option value="Double" ${pax.bed === 'Double' ? 'selected' : ''}>Double</option>
-        <option value="Triple" ${pax.bed === 'Triple' ? 'selected' : ''}>Triple</option>
-        <option value="Quad" ${pax.bed === 'Quad' ? 'selected' : ''}>Quad</option>
-        <option value="Sharing" ${pax.bed === 'Sharing' ? 'selected' : ''}>Sharing</option>
-        <option value="No Bed" ${pax.bed === 'No Bed' ? 'selected' : ''}>No Bed</option>
       </select>
     </td>
     <td class="${mofaClass}"><input type="text" value="${pax.mofaNo || ''}" placeholder="MOFA #" class="w-full border border-slate-300 rounded p-1 text-xs"></td>
@@ -327,7 +427,7 @@ function addHotelRow(hotel = {}, e) {
 
   tr.innerHTML = `
     <td>
-      <select class="w-full border border-slate-300 rounded p-1 text-xs font-semibold text-emerald-800">
+      <select class="hotel-city-select w-full border border-slate-300 rounded p-1 text-xs font-semibold text-emerald-800">
         <option value="Makkah" ${hotel.city === 'Makkah' ? 'selected' : ''}>Makkah</option>
         <option value="Madinah" ${hotel.city === 'Madinah' ? 'selected' : ''}>Madinah</option>
         <option value="Jeddah" ${hotel.city === 'Jeddah' ? 'selected' : ''}>Jeddah</option>
@@ -335,9 +435,9 @@ function addHotelRow(hotel = {}, e) {
         <option value="Riyadh" ${hotel.city === 'Riyadh' ? 'selected' : ''}>Riyadh</option>
       </select>
     </td>
-    <td><input type="text" value="${hotel.hotelName || ''}" placeholder="e.g. Swissotel Clock Tower" class="w-full border border-slate-300 rounded p-1 text-xs font-bold"></td>
+    <td><input type="text" value="${hotel.hotelName || ''}" placeholder="e.g. Swissotel Clock Tower" class="hotel-name-input w-full border border-slate-300 rounded p-1 text-xs font-bold"></td>
     <td>
-      <select class="w-full border border-slate-300 rounded p-1 text-xs">
+      <select class="hotel-room-type-select w-full border border-slate-300 rounded p-1 text-xs">
         <option value="Single Room" ${hotel.roomType === 'Single Room' ? 'selected' : ''}>Single Room</option>
         <option value="Double Room" ${hotel.roomType === 'Double Room' ? 'selected' : ''}>Double Room</option>
         <option value="Triple Room" ${hotel.roomType === 'Triple Room' ? 'selected' : ''}>Triple Room</option>
@@ -349,7 +449,7 @@ function addHotelRow(hotel = {}, e) {
       </select>
     </td>
     <td>
-      <select class="w-full border border-slate-300 rounded p-1 text-xs">
+      <select class="hotel-meal-plan-select w-full border border-slate-300 rounded p-1 text-xs">
         <option value="Bed & Breakfast" ${hotel.mealPlan === 'Bed & Breakfast' ? 'selected' : ''}>Bed & Breakfast</option>
         <option value="Room Only" ${hotel.mealPlan === 'Room Only' ? 'selected' : ''}>Room Only</option>
         <option value="Half Board (Breakfast & Dinner)" ${hotel.mealPlan === 'Half Board (Breakfast & Dinner)' ? 'selected' : ''}>Half Board</option>
@@ -359,6 +459,15 @@ function addHotelRow(hotel = {}, e) {
     </td>
     <td><input type="text" value="${hotel.checkIn || today}" class="checkin-date w-full border border-slate-300 rounded p-1 text-xs font-medium"></td>
     <td><input type="text" value="${hotel.checkOut || nextWeekDate}" class="checkout-date w-full border border-slate-300 rounded p-1 text-xs font-medium"></td>
+    <td>
+      <select class="hotel-bed-select w-full border border-slate-300 rounded p-1 text-xs font-medium">
+        <option value="Double" ${(hotel.bed || 'Double') === 'Double' ? 'selected' : ''}>Double</option>
+        <option value="Triple" ${(hotel.bed || 'Double') === 'Triple' ? 'selected' : ''}>Triple</option>
+        <option value="Quad" ${(hotel.bed || 'Double') === 'Quad' ? 'selected' : ''}>Quad</option>
+        <option value="Sharing" ${(hotel.bed || 'Double') === 'Sharing' ? 'selected' : ''}>Sharing</option>
+        <option value="No Bed" ${(hotel.bed || 'Double') === 'No Bed' ? 'selected' : ''}>No Bed</option>
+      </select>
+    </td>
     <td class="text-center font-extrabold text-xs text-emerald-700 nights-cell bg-emerald-50">${hotel.totalNights || 7} Nts</td>
     <td class="text-center">
       <button type="button" onclick="deleteHotelRow(this)" title="Delete Hotel" class="text-red-500 hover:text-red-700 p-1">
@@ -439,6 +548,11 @@ function fillSampleData(e) {
   try {
     const familyHeadInput = document.getElementById('familyHeadName');
     if (familyHeadInput) familyHeadInput.value = 'Muhammad Ahmed Siddiqui';
+
+    const agentSelect = document.getElementById('bookingAgentSelect');
+    if (agentSelect && agentSelect.options.length > 1) {
+      agentSelect.selectedIndex = 1;
+    }
     document.getElementById('adultsCount').value = 2;
     document.getElementById('childrenCount').value = 1;
     document.getElementById('infantsCount').value = 0;
@@ -460,15 +574,20 @@ function fillSampleData(e) {
     if (hBody) hBody.innerHTML = '';
 
     // Add sample passengers
-    addPassengerRow({ passportNo: 'PK8920194', name: 'Muhammad Ahmed Siddiqui', gender: 'Male', type: 'Adult', bed: 'Double', mofaNo: '90481204', groupNo: 'GRP-902', visaNo: '6701824901', pnr: 'SV-98A7' });
-    addPassengerRow({ passportNo: 'PK8920195', name: 'Fatima Siddiqui', gender: 'Female', type: 'Adult', bed: 'Double', mofaNo: '90481205', groupNo: 'GRP-902', visaNo: '6701824902', pnr: 'SV-98A7' });
-    addPassengerRow({ passportNo: 'PK8920196', name: 'Yousuf Siddiqui', gender: 'Male', type: 'Child', bed: 'Sharing', mofaNo: '90481206', groupNo: 'GRP-902', visaNo: '6701824903', pnr: 'SV-98A7' });
+    addPassengerRow({ passportNo: 'PK8920194', name: 'Muhammad Ahmed Siddiqui', gender: 'Male', type: 'Adult', mofaNo: '90481204', groupNo: 'GRP-902', visaNo: '6701824901', pnr: 'SV-98A7' });
+    addPassengerRow({ passportNo: 'PK8920195', name: 'Fatima Siddiqui', gender: 'Female', type: 'Adult', mofaNo: '90481205', groupNo: 'GRP-902', visaNo: '6701824902', pnr: 'SV-98A7' });
+    addPassengerRow({ passportNo: 'PK8920196', name: 'Yousuf Siddiqui', gender: 'Male', type: 'Child', mofaNo: '90481206', groupNo: 'GRP-902', visaNo: '6701824903', pnr: 'SV-98A7' });
 
     // Add sample hotels
-    addHotelRow({ city: 'Makkah', hotelName: 'Swissôtel Makkah (Clock Tower)', roomType: 'Family Sharing', mealPlan: 'Bed & Breakfast', checkIn: '2026-08-16', checkOut: '2026-08-23', totalNights: 7 });
-    addHotelRow({ city: 'Madinah', hotelName: 'Pullman Zamzam Madinah', roomType: 'Gender Sharing', mealPlan: 'No Meal', checkIn: '2026-08-23', checkOut: '2026-08-30', totalNights: 7 });
+    addHotelRow({ city: 'Makkah', hotelName: 'Swissôtel Makkah (Clock Tower)', roomType: 'Family Sharing', mealPlan: 'Bed & Breakfast', checkIn: '2026-08-16', checkOut: '2026-08-23', totalNights: 7, bed: 'Double' });
+    addHotelRow({ city: 'Madinah', hotelName: 'Pullman Zamzam Madinah', roomType: 'Gender Sharing', mealPlan: 'No Meal', checkIn: '2026-08-23', checkOut: '2026-08-30', totalNights: 7, bed: 'Sharing' });
 
     // Ziyarat Details sample
+    const ziyaratToggle = document.getElementById('includeZiyaratToggle');
+    if (ziyaratToggle) {
+      ziyaratToggle.checked = true;
+      toggleZiyaratSectionVisibility();
+    }
     document.getElementById('makkahZiyaratSelect').value = 'Yes';
     if (makkahZiyaratDatePicker) makkahZiyaratDatePicker.setDate('2026-08-18');
     else document.getElementById('makkahZiyaratDate').value = '2026-08-18';
@@ -492,6 +611,8 @@ function fillSampleData(e) {
     else document.getElementById('depDate').value = '2026-08-16';
     if (depTimePicker) depTimePicker.setDate('04:30 AM');
     else document.getElementById('depTime').value = '04:30 AM';
+    if (depArrivalTimePicker) depArrivalTimePicker.setDate('07:30 AM');
+    else document.getElementById('depArrivalTime').value = '07:30 AM';
     document.getElementById('depRoute').value = 'LHE -> JED';
 
     document.getElementById('retAirline').value = 'Saudi Arabian Airlines (SV)';
@@ -500,6 +621,8 @@ function fillSampleData(e) {
     else document.getElementById('retDate').value = '2026-08-30';
     if (retTimePicker) retTimePicker.setDate('06:15 PM');
     else document.getElementById('retTime').value = '06:15 PM';
+    if (retArrivalTimePicker) retArrivalTimePicker.setDate('09:15 PM');
+    else document.getElementById('retArrivalTime').value = '09:15 PM';
     document.getElementById('retRoute').value = 'MED -> LHE';
 
     // Helplines sample
@@ -516,6 +639,7 @@ function fillSampleData(e) {
 2- Transport will depart strictly as per schedule. Delayed passengers must arrange their own transit.
 3- Keep your passport copy and Umrah Visa printout with you at all times in KSA.`;
 
+    calculateAndDisplayPackageDays();
     showToast('Sample Umrah voucher data populated!', 'success');
   } catch (err) {
     console.error("Error populating sample data:", err);
@@ -543,6 +667,9 @@ function resetVoucherForm(e) {
     document.getElementById('infantsCount').value = 0;
     updateTotalPaxDisplay();
 
+    const agentSelect = document.getElementById('bookingAgentSelect');
+    if (agentSelect) agentSelect.value = '';
+
     const mofaToggle = document.getElementById('includeMofaToggle');
     if (mofaToggle) {
       mofaToggle.checked = false;
@@ -551,9 +678,16 @@ function resetVoucherForm(e) {
 
     if (depDatePicker) depDatePicker.setDate('2026-08-16');
     if (depTimePicker) depTimePicker.setDate('04:30 AM');
+    if (depArrivalTimePicker) depArrivalTimePicker.setDate('07:30 AM');
     if (retDatePicker) retDatePicker.setDate('2026-08-30');
     if (retTimePicker) retTimePicker.setDate('06:15 PM');
+    if (retArrivalTimePicker) retArrivalTimePicker.setDate('09:15 PM');
 
+    const ziyaratToggle = document.getElementById('includeZiyaratToggle');
+    if (ziyaratToggle) {
+      ziyaratToggle.checked = false;
+      toggleZiyaratSectionVisibility();
+    }
     document.getElementById('makkahZiyaratSelect').value = 'No';
     if (makkahZiyaratDatePicker) makkahZiyaratDatePicker.clear();
     else document.getElementById('makkahZiyaratDate').value = '';
@@ -569,6 +703,18 @@ function resetVoucherForm(e) {
     addPassengerRow();
     addHotelRow();
 
+    // Re-populate Agent Name after form reset
+    const session = localStorage.getItem('tvg_session');
+    if (session) {
+      const user = JSON.parse(session);
+      const namePart = (user.role || '').split(':')[1] || '';
+      const agentNameInput = document.getElementById('agentName');
+      if (agentNameInput) {
+        agentNameInput.value = namePart || user.email.split('@')[0];
+      }
+    }
+
+    calculateAndDisplayPackageDays();
     showToast('Form reset to default state', 'info');
   } catch (err) {
     console.error("Error resetting form:", err);
@@ -599,17 +745,16 @@ function getVoucherFormData() {
   const passengers = [];
   passengerRows.forEach(tr => {
     const inputs = tr.querySelectorAll('input, select');
-    if (inputs.length >= 9) {
+    if (inputs.length >= 8) {
       passengers.push({
         passportNo: inputs[0].value || '',
         name: inputs[1].value || '',
         gender: inputs[2].value || 'Male',
         type: inputs[3].value || 'Adult',
-        bed: inputs[4].value || 'Double',
-        mofaNo: inputs[5].value || '',
-        groupNo: inputs[6].value || '',
-        visaNo: inputs[7].value || '',
-        pnr: inputs[8].value || ''
+        mofaNo: inputs[4].value || '',
+        groupNo: inputs[5].value || '',
+        visaNo: inputs[6].value || '',
+        pnr: inputs[7].value || ''
       });
     }
   });
@@ -618,19 +763,25 @@ function getVoucherFormData() {
   const hotelRows = document.querySelectorAll('#hotelTableBody tr');
   const hotels = [];
   hotelRows.forEach(tr => {
-    const selects = tr.querySelectorAll('select');
-    const inputs = tr.querySelectorAll('input');
+    const cityEl = tr.querySelector('.hotel-city-select');
+    const nameEl = tr.querySelector('.hotel-name-input');
+    const roomTypeEl = tr.querySelector('.hotel-room-type-select');
+    const mealPlanEl = tr.querySelector('.hotel-meal-plan-select');
+    const checkInEl = tr.querySelector('.checkin-date');
+    const checkOutEl = tr.querySelector('.checkout-date');
+    const bedEl = tr.querySelector('.hotel-bed-select');
     const nightsCell = tr.querySelector('.nights-cell');
 
-    if (selects.length >= 3 && inputs.length >= 2) {
+    if (cityEl && nameEl && roomTypeEl && mealPlanEl && checkInEl && checkOutEl && bedEl) {
       const totalNights = parseInt(nightsCell ? nightsCell.innerText : '0', 10) || 0;
       hotels.push({
-        city: selects[0].value || 'Makkah',
-        hotelName: inputs[0].value || '',
-        roomType: selects[1].value || 'Double Room',
-        mealPlan: selects[2].value || 'Bed & Breakfast',
-        checkIn: inputs[1].value || '',
-        checkOut: inputs[2].value || '',
+        city: cityEl.value || 'Makkah',
+        hotelName: nameEl.value || '',
+        roomType: roomTypeEl.value || 'Double Room',
+        mealPlan: mealPlanEl.value || 'Bed & Breakfast',
+        checkIn: checkInEl.value || '',
+        checkOut: checkOutEl.value || '',
+        bed: bedEl.value || 'Double',
         totalNights: totalNights
       });
     }
@@ -648,19 +799,23 @@ function getVoucherFormData() {
   // Flight
   const depDateVal = depDatePicker ? depDatePicker.input.value : getVal('depDate', '');
   const depTimeVal = depTimePicker ? depTimePicker.input.value : getVal('depTime', '');
+  const depArrivalTimeVal = depArrivalTimePicker ? depArrivalTimePicker.input.value : getVal('depArrivalTime', '');
   const retDateVal = retDatePicker ? retDatePicker.input.value : getVal('retDate', '');
   const retTimeVal = retTimePicker ? retTimePicker.input.value : getVal('retTime', '');
+  const retArrivalTimeVal = retArrivalTimePicker ? retArrivalTimePicker.input.value : getVal('retArrivalTime', '');
 
   const flight = {
     departureAirline: getVal('depAirline', ''),
     departureFlightNo: getVal('depFlightNo', ''),
     departureDate: depDateVal,
     departureTime: depTimeVal,
+    departureArrivalTime: depArrivalTimeVal,
     departureRoute: getVal('depRoute', ''),
     returnAirline: getVal('retAirline', ''),
     returnFlightNo: getVal('retFlightNo', ''),
     returnDate: retDateVal,
     returnTime: retTimeVal,
+    returnArrivalTime: retArrivalTimeVal,
     returnRoute: getVal('retRoute', '')
   };
 
@@ -683,6 +838,7 @@ function getVoucherFormData() {
   const termsEnglish = getVal('termsEnglishInput', '');
 
   const showMofaDetails = document.getElementById('includeMofaToggle') ? document.getElementById('includeMofaToggle').checked : false;
+  const showZiyaratDetails = document.getElementById('includeZiyaratToggle') ? document.getElementById('includeZiyaratToggle').checked : false;
 
   return {
     id: refId,
@@ -693,7 +849,10 @@ function getVoucherFormData() {
     childrenCount,
     infantsCount,
     totalPax,
+    agentName: getVal('agentName'),
+    bookingAgentName: getVal('bookingAgentSelect'),
     showMofaDetails,
+    showZiyaratDetails,
     passengers: passengers || [],
     hotels: hotels || [],
     transport: transport || {},
@@ -870,6 +1029,36 @@ function saveVoucherToLocalStorage(voucher) {
   if (idx >= 0) localVouchers[idx] = voucher;
   else localVouchers.unshift(voucher);
   localStorage.setItem('tvg_vouchers', JSON.stringify(localVouchers));
+}
+
+let bookingAgentsCache = [];
+
+async function fetchBookingAgents() {
+  try {
+    const res = await fetch('/api/booking-agents');
+    const result = await res.json();
+    if (result.success && result.agents) {
+      bookingAgentsCache = result.agents;
+      populateBookingAgentsDropdown(bookingAgentsCache);
+    }
+  } catch (err) {
+    console.error("Failed to fetch booking agents: ", err);
+  }
+}
+
+function populateBookingAgentsDropdown(agents) {
+  const selectEl = document.getElementById('bookingAgentSelect');
+  if (!selectEl) return;
+
+  // Preserve placeholder option
+  selectEl.innerHTML = '<option value="">-- Select Booking Agent --</option>';
+
+  agents.forEach(agent => {
+    const opt = document.createElement('option');
+    opt.value = agent.name;
+    opt.textContent = `${agent.name} (${agent.email})`;
+    selectEl.appendChild(opt);
+  });
 }
 
 // --- AGENCY SETTINGS PERSISTENCE ---
@@ -1132,6 +1321,25 @@ function loadVoucherToForm(id) {
   document.getElementById('infantsCount').value = v.infantsCount || 0;
   updateTotalPaxDisplay();
 
+  const agentNameInput = document.getElementById('agentName');
+  if (agentNameInput) {
+    agentNameInput.value = v.agentName || formatCreatorName(v.createdBy, v.createdByRole).split(' (')[0] || '';
+  }
+
+  const agentSelect = document.getElementById('bookingAgentSelect');
+  if (agentSelect) {
+    if (v.bookingAgentName) {
+      let optionExists = Array.from(agentSelect.options).some(opt => opt.value === v.bookingAgentName);
+      if (!optionExists) {
+        const opt = document.createElement('option');
+        opt.value = v.bookingAgentName;
+        opt.textContent = v.bookingAgentName;
+        agentSelect.appendChild(opt);
+      }
+    }
+    agentSelect.value = v.bookingAgentName || '';
+  }
+
   const mofaToggle = document.getElementById('includeMofaToggle');
   if (mofaToggle) {
     mofaToggle.checked = v.showMofaDetails || false;
@@ -1197,6 +1405,8 @@ function loadVoucherToForm(id) {
     if (depDatePicker && v.flight.departureDate) depDatePicker.setDate(v.flight.departureDate);
     if (depTimePicker && v.flight.departureTime) depTimePicker.setDate(v.flight.departureTime);
     else if (v.flight.departureTime) document.getElementById('depTime').value = v.flight.departureTime;
+    if (depArrivalTimePicker && v.flight.departureArrivalTime) depArrivalTimePicker.setDate(v.flight.departureArrivalTime);
+    else if (v.flight.departureArrivalTime) document.getElementById('depArrivalTime').value = v.flight.departureArrivalTime;
 
     if (v.flight.returnAirline) document.getElementById('retAirline').value = v.flight.returnAirline;
     if (v.flight.returnFlightNo) document.getElementById('retFlightNo').value = v.flight.returnFlightNo;
@@ -1204,6 +1414,8 @@ function loadVoucherToForm(id) {
     if (retDatePicker && v.flight.returnDate) retDatePicker.setDate(v.flight.returnDate);
     if (retTimePicker && v.flight.returnTime) retTimePicker.setDate(v.flight.returnTime);
     else if (v.flight.returnTime) document.getElementById('retTime').value = v.flight.returnTime;
+    if (retArrivalTimePicker && v.flight.returnArrivalTime) retArrivalTimePicker.setDate(v.flight.returnArrivalTime);
+    else if (v.flight.returnArrivalTime) document.getElementById('retArrivalTime').value = v.flight.returnArrivalTime;
   }
 
   // Load Terms & Helplines
@@ -1213,6 +1425,11 @@ function loadVoucherToForm(id) {
     if (v.helplines.transport) document.getElementById('transportHelplineInput').value = v.helplines.transport;
   }
 
+  const ziyaratToggle = document.getElementById('includeZiyaratToggle');
+  if (ziyaratToggle) {
+    ziyaratToggle.checked = v.showZiyaratDetails || false;
+    toggleZiyaratSectionVisibility();
+  }
   // Load Ziyarat
   if (v.ziyarat) {
     document.getElementById('makkahZiyaratSelect').value = v.ziyarat.makkahIncluded || 'No';
@@ -1235,6 +1452,7 @@ function loadVoucherToForm(id) {
   if (v.termsUrdu) document.getElementById('termsUrduInput').value = v.termsUrdu;
   if (v.termsEnglish) document.getElementById('termsEnglishInput').value = v.termsEnglish;
 
+  calculateAndDisplayPackageDays();
   switchTab('create');
   showToast(`Voucher ${v.id} loaded to form for editing`, 'info');
 }
@@ -1543,6 +1761,13 @@ function checkAuth() {
     if (window.location.pathname !== '/login') {
       window.history.pushState(null, '', '/login');
     }
+    // Reset password visibility state to hidden on logout or navigation to login
+    const loginPasswordInput = document.getElementById('loginPassword');
+    const passwordEyeIcon = document.getElementById('passwordEyeIcon');
+    if (loginPasswordInput && passwordEyeIcon) {
+      loginPasswordInput.setAttribute('type', 'password');
+      passwordEyeIcon.className = 'fa-solid fa-eye';
+    }
   } else {
     const user = JSON.parse(session);
     if (appContainer) appContainer.classList.remove('hidden');
@@ -1552,14 +1777,48 @@ function checkAuth() {
     const emailEl = document.getElementById('userProfileEmail');
     const roleEl = document.getElementById('userProfileRole');
     const profileMenu = document.getElementById('userProfileMenu');
-    if (emailEl) emailEl.innerText = user.email;
-    if (roleEl) roleEl.innerText = user.role;
+    
+    const parts = (user.role || '').split(':');
+    const rolePart = parts[0];
+    const namePart = parts[1] || '';
+
+    if (emailEl) emailEl.innerText = namePart ? `${namePart} (${user.email})` : user.email;
+    if (roleEl) roleEl.innerText = rolePart;
     if (profileMenu) profileMenu.classList.remove('hidden');
+
+    // Auto-fill Agent Name on the form
+    const agentNameInput = document.getElementById('agentName');
+    const defaultAgentName = namePart || user.email.split('@')[0];
+    if (agentNameInput) {
+      agentNameInput.value = defaultAgentName;
+    }
+
+    // Admin-only permissions for Booking Agent dropdown
+    const bookingAgentContainer = document.getElementById('bookingAgentContainer');
+    const bookingAgentSelect = document.getElementById('bookingAgentSelect');
+    if (rolePart === 'admin') {
+      if (bookingAgentContainer) bookingAgentContainer.classList.remove('hidden');
+      if (bookingAgentSelect) bookingAgentSelect.setAttribute('required', 'required');
+    } else {
+      if (bookingAgentContainer) bookingAgentContainer.classList.add('hidden');
+      if (bookingAgentSelect) {
+        bookingAgentSelect.removeAttribute('required');
+        // Ensure the option exists so we can select it
+        let optionExists = Array.from(bookingAgentSelect.options).some(opt => opt.value === defaultAgentName);
+        if (!optionExists) {
+          const opt = document.createElement('option');
+          opt.value = defaultAgentName;
+          opt.textContent = `${defaultAgentName} (${user.email})`;
+          bookingAgentSelect.appendChild(opt);
+        }
+        bookingAgentSelect.value = defaultAgentName;
+      }
+    }
 
     // Admin-only permissions
     const settingsTabBtn = document.getElementById('navSettingsTab');
     const manageUsersCard = document.getElementById('manageUsersCard');
-    if (user.role === 'admin') {
+    if (rolePart === 'admin') {
       if (settingsTabBtn) settingsTabBtn.classList.remove('hidden');
       if (manageUsersCard) manageUsersCard.classList.remove('hidden');
     } else {
@@ -1585,6 +1844,22 @@ async function handleLogin() {
 
   const email = emailInput.value.trim();
   const password = passwordInput.value;
+
+  const submitBtn = document.getElementById('loginSubmitBtn');
+  const submitIcon = document.getElementById('loginSubmitIcon');
+  const submitText = document.getElementById('loginSubmitText');
+
+  // Disable button and show interactive spinning airplane loader
+  if (submitBtn) {
+    submitBtn.disabled = true;
+    submitBtn.classList.add('opacity-75', 'cursor-not-allowed');
+  }
+  if (submitIcon) {
+    submitIcon.className = 'fa-solid fa-plane fa-spin text-sm';
+  }
+  if (submitText) {
+    submitText.innerText = 'Signing In...';
+  }
 
   showToast('Signing in...', 'info');
 
@@ -1615,6 +1890,18 @@ async function handleLogin() {
   } catch (err) {
     console.error("Login Error:", err);
     showToast('Login connection failed', 'error');
+  } finally {
+    // Restore button state
+    if (submitBtn) {
+      submitBtn.disabled = false;
+      submitBtn.classList.remove('opacity-75', 'cursor-not-allowed');
+    }
+    if (submitIcon) {
+      submitIcon.className = 'fa-solid fa-plane-departure text-sm';
+    }
+    if (submitText) {
+      submitText.innerText = 'Secure Sign In';
+    }
   }
 }
 
@@ -1675,17 +1962,22 @@ function renderSystemUsers(users) {
   }
 
   tableBody.innerHTML = users.map(u => {
+    const parts = (u.role || '').split(':');
+    const rolePart = parts[0];
+    const namePart = parts[1] || '-';
+
     let badgeColor = 'bg-blue-100 text-blue-800';
-    if (u.role === 'admin') badgeColor = 'bg-amber-100 text-amber-800';
-    else if (u.role === 'staff_approved') badgeColor = 'bg-emerald-100 text-emerald-800';
-    else if (u.role === 'staff_pending') badgeColor = 'bg-rose-100 text-rose-800';
+    if (rolePart === 'admin') badgeColor = 'bg-amber-100 text-amber-800';
+    else if (rolePart === 'staff_approved') badgeColor = 'bg-emerald-100 text-emerald-800';
+    else if (rolePart === 'staff_pending') badgeColor = 'bg-rose-100 text-rose-800';
 
     return `
       <tr class="hover:bg-slate-50 transition-colors">
+        <td class="py-3 px-3 font-semibold text-slate-800">${namePart}</td>
         <td class="py-3 px-3 font-semibold text-slate-800">${u.email}</td>
         <td class="py-3 px-3">
           <span class="px-2 py-0.5 rounded text-[10px] font-bold uppercase ${badgeColor}">
-            ${u.role}
+            ${rolePart}
           </span>
         </td>
         <td class="py-3 px-3 text-center">
@@ -1702,21 +1994,31 @@ async function handleAddUser() {
   const session = localStorage.getItem('tvg_session');
   if (!session) return;
   const user = JSON.parse(session);
-  if (user.role !== 'admin') return;
+  const baseRole = (user.role || '').split(':')[0];
+  if (baseRole !== 'admin') return;
 
+  const fullNameInput = document.getElementById('newUserFullName');
   const emailInput = document.getElementById('newUserEmail');
   const passwordInput = document.getElementById('newUserPassword');
   const roleSelect = document.getElementById('newUserRole');
-  if (!emailInput || !passwordInput || !roleSelect) return;
+  if (!emailInput || !passwordInput || !roleSelect || !fullNameInput) return;
 
   const email = emailInput.value.trim();
   const password = passwordInput.value;
-  const role = roleSelect.value;
+  const rawRole = roleSelect.value;
+  const fullName = fullNameInput.value.trim();
+
+  if (!fullName) {
+    showToast('Full name is required', 'error');
+    return;
+  }
 
   if (password.length < 6) {
     showToast('Password must be at least 6 characters', 'error');
     return;
   }
+
+  const role = `${rawRole}:${fullName}`;
 
   showToast('Creating user account...', 'info');
 
@@ -1733,6 +2035,7 @@ async function handleAddUser() {
     const result = await response.json();
     if (result.success) {
       showToast('User account created successfully!', 'success');
+      fullNameInput.value = '';
       emailInput.value = '';
       passwordInput.value = '';
       roleSelect.value = 'staff_approved';
@@ -1750,7 +2053,8 @@ async function handleDeleteUser(id) {
   const session = localStorage.getItem('tvg_session');
   if (!session) return;
   const user = JSON.parse(session);
-  if (user.role !== 'admin') return;
+  const baseRole = (user.role || '').split(':')[0];
+  if (baseRole !== 'admin') return;
 
   if (!confirm('Are you sure you want to delete this user account?')) return;
 

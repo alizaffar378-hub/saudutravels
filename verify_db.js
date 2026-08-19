@@ -7,11 +7,18 @@ async function checkDb() {
   try {
     const { data, error } = await supabase
       .from('vouchers')
-      .select('*')
-      .eq('id', 'UMR-2026-1234');
+      .select('id, booking_agent_name')
+      .limit(1);
 
-    if (error) throw error;
-    console.log("SUCCESS: Found voucher in Supabase database:\n", JSON.stringify(data, null, 2));
+    if (error) {
+      if (error.message.includes('booking_agent_name')) {
+        console.log("Database connection OK, but booking_agent_name column does not exist yet (run migration).");
+      } else {
+        throw error;
+      }
+    } else {
+      console.log("SUCCESS querying booking_agent_name:\n", data);
+    }
   } catch (e) {
     console.error("Failed to query DB:", e.message);
   }
