@@ -121,37 +121,37 @@ async function renderA4VoucherHTML(data, agencySettings) {
   // 1. Passenger Basic Details Table Rows
   const passBasicRowsHtml = (data.passengers || []).map((p, idx) => `
     <tr class="${idx % 2 === 1 ? 'bg-slate-50' : 'bg-white'} border-b border-slate-200">
-      <td class="text-center font-bold py-1.5 px-2 text-slate-900 text-[10px]">${idx + 1}</td>
-      <td class="font-bold py-1.5 px-2 text-slate-900 text-[10px]">${p.passportNo || '-'}</td>
-      <td class="font-extrabold py-1.5 px-2 text-emerald-900 text-[10.5px] truncate">${p.name || '-'}</td>
-      <td class="text-center font-semibold py-1.5 px-1 text-slate-900 text-[10px]">${p.gender || '-'}</td>
-      <td class="text-center py-1.5 px-1"><span class="px-1.5 py-0.5 bg-sky-100 text-sky-800 rounded text-[9.5px] font-extrabold">${p.type || '-'}</span></td>
+      <td data-label="Sr." class="text-center font-bold py-1.5 px-2 text-slate-900 text-[10px]">${idx + 1}</td>
+      <td data-label="Passport No" class="font-bold py-1.5 px-2 text-slate-900 text-[10px]">${p.passportNo || '-'}</td>
+      <td data-label="Passenger Name" class="font-extrabold py-1.5 px-2 text-emerald-900 text-[10.5px] truncate">${p.name || '-'}</td>
+      <td data-label="Gender" class="text-center font-semibold py-1.5 px-1 text-slate-900 text-[10px]">${p.gender || '-'}</td>
+      <td data-label="Type" class="text-center py-1.5 px-1"><span class="px-1.5 py-0.5 bg-sky-100 text-sky-800 rounded text-[9.5px] font-extrabold">${p.type || '-'}</span></td>
     </tr>
   `).join('');
 
   // 2. Visa & MOFA Details Table Rows
   const passVisaRowsHtml = (data.passengers || []).map((p, idx) => `
     <tr class="${idx % 2 === 1 ? 'bg-slate-50' : 'bg-white'} border-b border-slate-200">
-      <td class="text-center font-bold py-1.5 px-2 text-slate-900 text-[10px]">${idx + 1}</td>
-      <td class="font-extrabold py-1.5 px-2 text-slate-900 text-[10px] truncate">${p.name || '-'}</td>
-      <td class="font-bold py-1.5 px-2 text-slate-900 text-[10px]">${p.mofaNo || '-'}</td>
-      <td class="font-bold py-1.5 px-2 text-slate-900 text-[10px]">${p.groupNo || '-'}</td>
-      <td class="font-bold py-1.5 px-2 text-slate-900 text-[10px]">${p.visaNo || '-'}</td>
-      <td class="font-mono font-extrabold py-1.5 px-2 text-emerald-800 text-[10.5px]">${p.pnr || '-'}</td>
+      <td data-label="Sr." class="text-center font-bold py-1.5 px-2 text-slate-900 text-[10px]">${idx + 1}</td>
+      <td data-label="Passenger Name" class="font-extrabold py-1.5 px-2 text-slate-900 text-[10px] truncate">${p.name || '-'}</td>
+      <td data-label="MOFA No" class="font-bold py-1.5 px-2 text-slate-900 text-[10px]">${p.mofaNo || '-'}</td>
+      <td data-label="Group No" class="font-bold py-1.5 px-2 text-slate-900 text-[10px]">${p.groupNo || '-'}</td>
+      <td data-label="Visa No" class="font-bold py-1.5 px-2 text-slate-900 text-[10px]">${p.visaNo || '-'}</td>
+      <td data-label="PNR" class="font-mono font-extrabold py-1.5 px-2 text-emerald-800 text-[10.5px]">${p.pnr || '-'}</td>
     </tr>
   `).join('');
 
   // 3. Hotel Rows
   const hotelRowsHtml = (data.hotels || []).map((h, idx) => `
     <tr class="${idx % 2 === 1 ? 'bg-slate-50' : 'bg-white'} border-b border-slate-200 text-[10px]">
-      <td class="font-extrabold py-1.5 px-2 text-emerald-900">${h.city || '-'}</td>
-      <td class="font-extrabold py-1.5 px-2 text-slate-900 truncate">${h.hotelName || '-'}</td>
-      <td class="font-bold py-1.5 px-2 text-slate-800">${h.roomType || '-'}</td>
-      <td class="font-bold py-1.5 px-2 text-slate-800">${h.mealPlan || '-'}</td>
-      <td class="font-bold py-1.5 px-2 text-slate-900">${formatDateToDMY(h.checkIn)}</td>
-      <td class="font-bold py-1.5 px-2 text-slate-900">${formatDateToDMY(h.checkOut)}</td>
-      <td class="text-center font-semibold py-1.5 px-2 text-slate-900">${h.bed || '-'}</td>
-      <td class="text-center font-black py-1.5 px-2 text-emerald-800 bg-emerald-50">${h.totalNights || 0} Nts</td>
+      <td data-label="City" class="font-extrabold py-1.5 px-2 text-emerald-900">${h.city || '-'}</td>
+      <td data-label="Hotel Name" class="font-extrabold py-1.5 px-2 text-slate-900 truncate">${h.hotelName || '-'}</td>
+      <td data-label="Room Type" class="font-bold py-1.5 px-2 text-slate-800">${h.roomType || '-'}</td>
+      <td data-label="Meal Plan" class="font-bold py-1.5 px-2 text-slate-800">${h.mealPlan || '-'}</td>
+      <td data-label="Check In" class="font-bold py-1.5 px-2 text-slate-900">${formatDateToDMY(h.checkIn)}</td>
+      <td data-label="Check Out" class="font-bold py-1.5 px-2 text-slate-900">${formatDateToDMY(h.checkOut)}</td>
+      <td data-label="Bed" class="text-center font-semibold py-1.5 px-2 text-slate-900">${h.bed || '-'}</td>
+      <td data-label="Nights" class="text-center font-black py-1.5 px-2 text-emerald-800 bg-emerald-50">${h.totalNights || 0} Nts</td>
     </tr>
   `).join('');
 
@@ -167,18 +167,18 @@ async function renderA4VoucherHTML(data, agencySettings) {
   if (showMakkah) {
     ziyaratRowsHtml += `
       <tr class="bg-white border-b border-slate-200">
-        <td class="font-black text-emerald-800 py-1.5 px-2">Makkah</td>
-        <td class="font-bold text-slate-900 py-1.5 px-2">Yes</td>
-        <td class="font-bold text-slate-900 py-1.5 px-2">${formatDateToDMY(data.ziyarat.makkahDate)}</td>
+        <td data-label="City" class="font-black text-emerald-800 py-1.5 px-2">Makkah</td>
+        <td data-label="Ziyarat Included" class="font-bold text-slate-900 py-1.5 px-2">Yes</td>
+        <td data-label="Date" class="font-bold text-slate-900 py-1.5 px-2">${formatDateToDMY(data.ziyarat.makkahDate)}</td>
       </tr>
     `;
   }
   if (showMadinah) {
     ziyaratRowsHtml += `
       <tr class="${showMakkah ? 'bg-slate-50' : 'bg-white'} border-b border-slate-200">
-        <td class="font-black text-emerald-800 py-1.5 px-2">Madinah</td>
-        <td class="font-bold text-slate-900 py-1.5 px-2">Yes</td>
-        <td class="font-bold text-slate-900 py-1.5 px-2">${formatDateToDMY(data.ziyarat.madinahDate)}</td>
+        <td data-label="City" class="font-black text-emerald-800 py-1.5 px-2">Madinah</td>
+        <td data-label="Ziyarat Included" class="font-bold text-slate-900 py-1.5 px-2">Yes</td>
+        <td data-label="Date" class="font-bold text-slate-900 py-1.5 px-2">${formatDateToDMY(data.ziyarat.madinahDate)}</td>
       </tr>
     `;
   }
@@ -195,6 +195,72 @@ async function renderA4VoucherHTML(data, agencySettings) {
 
   const status = data.status || 'NOT APPROVED';
   return `
+    <style>
+      @media (max-width: 767px) {
+        .pdf-container, .voucher-wrapper, .voucher-root-container {
+          padding: 10px !important;
+          border-radius: 8px !important;
+          box-shadow: none !important;
+          border: none !important;
+        }
+        table, thead, tbody, th, td, tr {
+          display: block !important;
+          width: 100% !important;
+        }
+        thead {
+          display: none !important;
+        }
+        tr {
+          margin-bottom: 10px !important;
+          border: 1px solid #cbd5e1 !important;
+          border-radius: 6px !important;
+          background-color: #ffffff !important;
+          padding: 6px !important;
+          overflow: hidden !important;
+          box-shadow: 0 1px 2px 0 rgba(0,0,0,0.05) !important;
+        }
+        tr:nth-child(even) {
+          background-color: #f8fafc !important;
+        }
+        td {
+          border: none !important;
+          border-bottom: 1px solid #f1f5f9 !important;
+          position: relative !important;
+          padding: 6px 8px 6px 45% !important;
+          text-align: right !important;
+          font-size: 10px !important;
+          display: flex !important;
+          justify-content: flex-end !important;
+          align-items: center !important;
+          min-height: 28px !important;
+        }
+        td:last-child {
+          border-bottom: none !important;
+        }
+        td::before {
+          content: attr(data-label) !important;
+          position: absolute !important;
+          left: 8px !important;
+          width: 40% !important;
+          text-align: left !important;
+          font-weight: 800 !important;
+          color: #047857 !important;
+          text-transform: uppercase !important;
+          font-size: 8px !important;
+          white-space: nowrap !important;
+          overflow: hidden !important;
+          text-overflow: ellipsis !important;
+        }
+        td[colspan] {
+          padding-left: 8px !important;
+          text-align: center !important;
+          justify-content: center !important;
+        }
+        td[colspan]::before {
+          display: none !important;
+        }
+      }
+    </style>
     <div style="width: 100%; max-width: 100%; box-sizing: border-box;" class="a4-voucher-page pdf-container voucher-wrapper pdf-page-container voucher-root-container flex flex-col justify-between overflow-hidden p-4 bg-white text-slate-900 text-[11px] leading-snug">
       <div class="watermark-overlay" style="position: absolute !important; top: 50% !important; left: 50% !important; transform: translate(-50%, -50%) rotate(-30deg) !important; width: 85% !important; text-align: center !important; pointer-events: none !important; user-select: none !important; z-index: 9999 !important; opacity: 0.18 !important; color: ${status === 'APPROVED' ? '#00875A' : '#EF4444'} !important;">
         <div style="font-family: 'Impact', 'Arial Black', 'Arial', sans-serif !important; font-size: ${status === 'APPROVED' ? '85pt' : '70pt'} !important; font-weight: 950 !important; border: 8px double currentColor !important; padding: 15px 40px !important; border-radius: 12px !important; letter-spacing: 6px !important; white-space: nowrap !important; line-height: 1.1 !important; text-transform: uppercase !important; display: inline-block !important;">
@@ -204,14 +270,14 @@ async function renderA4VoucherHTML(data, agencySettings) {
       
       <!-- TOP HEADER (AGENCY BRANDING) -->
       <div>
-        <div class="relative flex flex-col items-center justify-center text-center border-b-2 border-emerald-700 pb-2 mb-2 w-full">
+        <div class="relative flex flex-col items-center justify-center text-center border-b-2 border-emerald-700 pb-2 mb-2 w-full gap-2 md:gap-0">
           <!-- Booking Agent Badge on the Top Left -->
-          <div class="absolute left-0 top-1 text-left bg-emerald-50 border border-emerald-200 px-5 py-3 rounded shadow-sm leading-tight">
+          <div class="md:absolute md:left-0 md:top-1 static flex flex-col items-center md:items-start text-center md:text-left bg-emerald-50 border border-emerald-200 px-5 py-3 rounded shadow-sm leading-tight w-full md:w-auto max-w-[320px] md:max-w-none order-2 md:order-none">
             <span class="block text-[11px] uppercase text-emerald-800 font-extrabold tracking-wider">Booking By</span>
             <strong class="text-emerald-950 font-black text-[16px]">${data.bookingAgentName || '-'}</strong>
           </div>
           <!-- QR Code Badge on the Top Right -->
-          <div class="absolute right-0 top-1 flex items-center space-x-3 bg-white p-2 rounded border border-emerald-200 shadow-sm shrink-0">
+          <div class="md:absolute md:right-0 md:top-1 static flex items-center justify-center space-x-3 bg-white p-2 rounded border border-emerald-200 shadow-sm shrink-0 w-full md:w-auto max-w-[320px] md:max-w-none order-3 md:order-none">
             ${qrDataUrl ? `<img src="${qrDataUrl}" style="width: 72px; height: 72px;" class="w-[72px] h-[72px] object-contain" alt="Voucher QR">` : ''}
             <div class="text-[9px] leading-tight text-slate-700 text-left">
               <strong class="font-extrabold text-emerald-800 block text-[10px] uppercase">VERIFIED</strong>
@@ -220,7 +286,7 @@ async function renderA4VoucherHTML(data, agencySettings) {
             </div>
           </div>
           <!-- Centered Logo, Name, Tagline, and License -->
-          <div class="flex flex-col items-center">
+          <div class="flex flex-col items-center order-first md:order-none">
             ${letterheadLogoHtml}
             <h1 class="text-[13px] font-black text-emerald-950 tracking-wide uppercase leading-tight mt-1">${agencySettings.agencyName || 'SAUDI PAK GROUP OF TRAVELS'}</h1>
             <p class="text-[9.5px] text-slate-700 font-bold mt-0.5">${agencySettings.tagline || 'Hajj & Umrah Pilgrimage Services'}</p>
@@ -229,19 +295,19 @@ async function renderA4VoucherHTML(data, agencySettings) {
         </div>
 
         <!-- VOUCHER TITLE BAR -->
-        <div class="bg-emerald-800 text-white rounded-md px-3 py-1.5 flex items-center justify-between shadow-sm mb-2">
+        <div class="bg-emerald-800 text-white rounded-md px-3 py-1.5 flex flex-col md:flex-row items-center justify-between shadow-sm mb-2 gap-1 text-center">
           <div class="flex items-center space-x-2">
             <i class="fa-solid fa-kaaba text-amber-300 text-sm"></i>
             <span class="font-black text-[11px] tracking-wider uppercase">OFFICIAL TRAVEL & UMRAH VOUCHER</span>
           </div>
-          <div class="flex items-center space-x-3 text-[10.5px]">
+          <div class="flex flex-wrap items-center justify-center gap-3 text-[10.5px]">
             <span>Voucher Ref: <strong class="text-amber-300 font-mono font-bold">${data.id}</strong></span>
             <span>Date: <strong>${formatDateToDMY(data.voucherDate)}</strong></span>
           </div>
         </div>
 
         <!-- SUMMARY INFO GRID -->
-        <div class="grid grid-cols-5 gap-2 bg-emerald-50/80 border border-emerald-200 rounded-md p-2 mb-2 text-[10px]">
+        <div class="grid grid-cols-2 md:grid-cols-5 gap-2 bg-emerald-50/80 border border-emerald-200 rounded-md p-2 mb-2 text-[10px]">
           <div>
             <span class="text-slate-600 block uppercase tracking-wider text-[8px] font-extrabold">Family Head / Leader</span>
             <strong class="text-slate-900 text-[11px] block truncate">${data.familyHead}</strong>
@@ -258,7 +324,7 @@ async function renderA4VoucherHTML(data, agencySettings) {
             <span class="text-slate-600 block uppercase tracking-wider text-[8px] font-extrabold">Total PAX</span>
             <span class="px-2 py-0.5 bg-emerald-700 text-white rounded font-black text-[10px] inline-block text-center w-full">${data.totalPax} Person(s)</span>
           </div>
-          <div>
+          <div class="col-span-2 md:col-span-1 text-center md:text-left">
             <span class="text-slate-600 block uppercase tracking-wider text-[8px] font-extrabold">Total Package Days</span>
             <span class="px-2 py-0.5 bg-emerald-800 text-white rounded font-black text-[10px] inline-block text-center w-full">${calculatedPackageDays > 0 ? calculatedPackageDays + ' Days' : '-'}</span>
           </div>
@@ -352,22 +418,22 @@ async function renderA4VoucherHTML(data, agencySettings) {
             </thead>
             <tbody>
               <tr class="bg-white border-b border-slate-200">
-                <td class="font-black text-emerald-800 py-1.5 px-2">Departure</td>
-                <td class="font-extrabold text-slate-900 py-1.5 px-2">${data.flight ? data.flight.departureAirline || '-' : '-'}</td>
-                <td class="font-mono font-black text-slate-900 py-1.5 px-2">${data.flight ? data.flight.departureFlightNo || '-' : '-'}</td>
-                <td class="font-extrabold text-emerald-900 py-1.5 px-2">${data.flight ? data.flight.departureRoute || '-' : '-'}</td>
-                <td class="font-bold text-slate-900 py-1.5 px-2">${formatDateToDMY(data.flight ? data.flight.departureDate : '')}</td>
-                <td class="font-bold text-slate-900 py-1.5 px-2 text-center">${data.flight ? data.flight.departureTime || '-' : '-'}</td>
-                <td class="font-bold text-slate-900 py-1.5 px-2 text-center">${data.flight ? data.flight.departureArrivalTime || '-' : '-'}</td>
+                <td data-label="Flight Type" class="font-black text-emerald-800 py-1.5 px-2">Departure</td>
+                <td data-label="Airline" class="font-extrabold text-slate-900 py-1.5 px-2">${data.flight ? data.flight.departureAirline || '-' : '-'}</td>
+                <td data-label="Flight No" class="font-mono font-black text-slate-900 py-1.5 px-2">${data.flight ? data.flight.departureFlightNo || '-' : '-'}</td>
+                <td data-label="Route" class="font-extrabold text-emerald-900 py-1.5 px-2">${data.flight ? data.flight.departureRoute || '-' : '-'}</td>
+                <td data-label="Date" class="font-bold text-slate-900 py-1.5 px-2">${formatDateToDMY(data.flight ? data.flight.departureDate : '')}</td>
+                <td data-label="Dep. Time" class="font-bold text-slate-900 py-1.5 px-2 text-center">${data.flight ? data.flight.departureTime || '-' : '-'}</td>
+                <td data-label="Arrival Time" class="font-bold text-slate-900 py-1.5 px-2 text-center">${data.flight ? data.flight.departureArrivalTime || '-' : '-'}</td>
               </tr>
               <tr class="bg-slate-50 border-b border-slate-200">
-                <td class="font-black text-emerald-800 py-1.5 px-2">Return</td>
-                <td class="font-extrabold text-slate-900 py-1.5 px-2">${data.flight ? data.flight.returnAirline || '-' : '-'}</td>
-                <td class="font-mono font-black text-slate-900 py-1.5 px-2">${data.flight ? data.flight.returnFlightNo || '-' : '-'}</td>
-                <td class="font-extrabold text-emerald-900 py-1.5 px-2">${data.flight ? data.flight.returnRoute || '-' : '-'}</td>
-                <td class="font-bold text-slate-900 py-1.5 px-2">${formatDateToDMY(data.flight ? data.flight.returnDate : '')}</td>
-                <td class="font-bold text-slate-900 py-1.5 px-2 text-center">${data.flight ? data.flight.returnTime || '-' : '-'}</td>
-                <td class="font-bold text-slate-900 py-1.5 px-2 text-center">${data.flight ? data.flight.returnArrivalTime || '-' : '-'}</td>
+                <td data-label="Flight Type" class="font-black text-emerald-800 py-1.5 px-2">Return</td>
+                <td data-label="Airline" class="font-extrabold text-slate-900 py-1.5 px-2">${data.flight ? data.flight.returnAirline || '-' : '-'}</td>
+                <td data-label="Flight No" class="font-mono font-black text-slate-900 py-1.5 px-2">${data.flight ? data.flight.returnFlightNo || '-' : '-'}</td>
+                <td data-label="Route" class="font-extrabold text-emerald-900 py-1.5 px-2">${data.flight ? data.flight.returnRoute || '-' : '-'}</td>
+                <td data-label="Date" class="font-bold text-slate-900 py-1.5 px-2">${formatDateToDMY(data.flight ? data.flight.returnDate : '')}</td>
+                <td data-label="Dep. Time" class="font-bold text-slate-900 py-1.5 px-2 text-center">${data.flight ? data.flight.returnTime || '-' : '-'}</td>
+                <td data-label="Arrival Time" class="font-bold text-slate-900 py-1.5 px-2 text-center">${data.flight ? data.flight.returnArrivalTime || '-' : '-'}</td>
               </tr>
             </tbody>
           </table>
@@ -410,11 +476,11 @@ async function renderA4VoucherHTML(data, agencySettings) {
             </thead>
             <tbody>
               <tr class="bg-white border-b border-slate-200">
-                <td class="font-bold text-slate-900 py-1.5 px-2">${data.transport ? formatDateToDMY(data.transport.date) : '-'}</td>
-                <td class="font-bold text-slate-900 py-1.5 px-2">${data.transport ? data.transport.transporter || '-' : '-'}</td>
-                <td class="font-bold text-slate-900 py-1.5 px-2">${data.transport ? data.transport.vehicleType || '-' : '-'}</td>
-                <td class="font-black text-emerald-800 py-1.5 px-2 font-mono">${data.transport ? data.transport.routeNo || '-' : '-'}</td>
-                <td class="font-bold text-slate-900 py-1.5 px-2">${data.transport ? data.transport.route || '-' : '-'}</td>
+                <td data-label="Date" class="font-bold text-slate-900 py-1.5 px-2">${data.transport ? formatDateToDMY(data.transport.date) : '-'}</td>
+                <td data-label="Company" class="font-bold text-slate-900 py-1.5 px-2">${data.transport ? data.transport.transporter || '-' : '-'}</td>
+                <td data-label="Vehicle" class="font-bold text-slate-900 py-1.5 px-2">${data.transport ? data.transport.vehicleType || '-' : '-'}</td>
+                <td data-label="Route No" class="font-black text-emerald-800 py-1.5 px-2 font-mono">${data.transport ? data.transport.routeNo || '-' : '-'}</td>
+                <td data-label="Transport Route" class="font-bold text-slate-900 py-1.5 px-2">${data.transport ? data.transport.route || '-' : '-'}</td>
               </tr>
             </tbody>
           </table>
@@ -436,7 +502,7 @@ async function renderA4VoucherHTML(data, agencySettings) {
 
       <!-- FOOTER TERMS & CONDITIONS (DUAL URDU & ENGLISH) -->
       <div class="border-t-2 border-emerald-700 pt-1.5 text-[9.5px] text-slate-900 font-semibold space-y-1">
-        <div class="grid grid-cols-2 gap-2">
+        <div class="grid grid-cols-1 md:grid-cols-2 gap-2">
           
           <!-- Urdu Rules -->
           <div dir="rtl" class="text-right font-arabic bg-slate-50 p-1.5 rounded border border-slate-200">
@@ -463,7 +529,7 @@ async function renderA4VoucherHTML(data, agencySettings) {
           ${agencySettings.address ? `<span><i class="fa-solid fa-location-dot text-emerald-700 mr-1"></i>${agencySettings.address}</span>` : ''}
         </div>
 
-        <div class="flex items-center justify-between text-[8px] text-slate-500 font-bold pt-1">
+        <div class="flex flex-col md:flex-row items-center justify-between text-[8px] text-slate-500 font-bold pt-1 gap-1">
           <span>Prepared By: <strong>${data.agentName || formatCreatorName(data.createdBy, data.createdByRole)}</strong></span>
           <span>Generated via Travel Voucher Generator System</span>
           <span>Page 1 of 1</span>

@@ -304,37 +304,37 @@ function buildSelfContainedPdfHtml(data, agencySettings, qrDataUrl, baseUrl, isW
   // 1. Passenger Basic Details Table Rows
   const passBasicRowsHtml = (data.passengers || []).map((p, idx) => `
     <tr style="${idx % 2 === 1 ? 'background-color: #f9fafb;' : 'background-color: #ffffff;'}">
-      <td style="text-align: center; font-weight: bold; color: #111827;">${idx + 1}</td>
-      <td style="font-weight: bold; color: #111827;">${p.passportNo || '-'}</td>
-      <td style="font-weight: 800; color: #065f46;">${p.name || '-'}</td>
-      <td style="text-align: center; font-weight: bold; color: #111827;">${p.gender || '-'}</td>
-      <td style="text-align: center;"><span style="background: #e0f2fe; color: #0369a1; padding: 1px 4px; border-radius: 2px; font-size: 8.5px; font-weight: 800;">${p.type || '-'}</span></td>
+      <td data-label="Sr." style="text-align: center; font-weight: bold; color: #111827;">${idx + 1}</td>
+      <td data-label="Passport No" style="font-weight: bold; color: #111827;">${p.passportNo || '-'}</td>
+      <td data-label="Passenger Name" style="font-weight: 800; color: #065f46;">${p.name || '-'}</td>
+      <td data-label="Gender" style="text-align: center; font-weight: bold; color: #111827;">${p.gender || '-'}</td>
+      <td data-label="Type" style="text-align: center;"><span style="background: #e0f2fe; color: #0369a1; padding: 1px 4px; border-radius: 2px; font-size: 8.5px; font-weight: 800;">${p.type || '-'}</span></td>
     </tr>
   `).join('');
 
   // 2. Visa & MOFA Details Table Rows
   const passVisaRowsHtml = (data.passengers || []).map((p, idx) => `
     <tr style="${idx % 2 === 1 ? 'background-color: #f9fafb;' : 'background-color: #ffffff;'}">
-      <td style="text-align: center; font-weight: bold; color: #111827;">${idx + 1}</td>
-      <td style="font-weight: 800; color: #111827;">${p.name || '-'}</td>
-      <td style="font-weight: bold; color: #111827;">${p.mofaNo || '-'}</td>
-      <td style="font-weight: bold; color: #111827;">${p.groupNo || '-'}</td>
-      <td style="font-weight: bold; color: #111827;">${p.visaNo || '-'}</td>
-      <td style="font-weight: 800; font-family: monospace; color: #047857;">${p.pnr || '-'}</td>
+      <td data-label="Sr." style="text-align: center; font-weight: bold; color: #111827;">${idx + 1}</td>
+      <td data-label="Passenger Name" style="font-weight: 800; color: #111827;">${p.name || '-'}</td>
+      <td data-label="MOFA No" style="font-weight: bold; color: #111827;">${p.mofaNo || '-'}</td>
+      <td data-label="Group No" style="font-weight: bold; color: #111827;">${p.groupNo || '-'}</td>
+      <td data-label="Visa No" style="font-weight: bold; color: #111827;">${p.visaNo || '-'}</td>
+      <td data-label="PNR" style="font-weight: 800; font-family: monospace; color: #047857;">${p.pnr || '-'}</td>
     </tr>
   `).join('');
 
   // 3. Hotel Rows
   const hotelRowsHtml = (data.hotels || []).map((h, idx) => `
     <tr style="${idx % 2 === 1 ? 'background-color: #f9fafb;' : 'background-color: #ffffff;'}">
-      <td style="font-weight: 800; color: #047857;">${h.city || '-'}</td>
-      <td style="font-weight: 800; color: #111827;">${h.hotelName || '-'}</td>
-      <td style="font-weight: bold; color: #1f2937;">${h.roomType || '-'}</td>
-      <td style="font-weight: bold; color: #1f2937;">${h.mealPlan || '-'}</td>
-      <td style="font-weight: bold; color: #111827;">${formatDateToDMY(h.checkIn)}</td>
-      <td style="font-weight: bold; color: #111827;">${formatDateToDMY(h.checkOut)}</td>
-      <td style="font-weight: bold; color: #111827; text-align: center;">${h.bed || '-'}</td>
-      <td style="text-align: center; font-weight: 800; color: #047857; background-color: #ecfdf5;">${h.totalNights || 0} Nts</td>
+      <td data-label="City" style="font-weight: 800; color: #047857;">${h.city || '-'}</td>
+      <td data-label="Hotel Name" style="font-weight: 800; color: #111827;">${h.hotelName || '-'}</td>
+      <td data-label="Room Type" style="font-weight: bold; color: #1f2937;">${h.roomType || '-'}</td>
+      <td data-label="Meal Plan" style="font-weight: bold; color: #1f2937;">${h.mealPlan || '-'}</td>
+      <td data-label="Check In" style="font-weight: bold; color: #111827;">${formatDateToDMY(h.checkIn)}</td>
+      <td data-label="Check Out" style="font-weight: bold; color: #111827;">${formatDateToDMY(h.checkOut)}</td>
+      <td data-label="Bed" style="font-weight: bold; color: #111827; text-align: center;">${h.bed || '-'}</td>
+      <td data-label="Nights" style="text-align: center; font-weight: 800; color: #047857; background-color: #ecfdf5;">${h.totalNights || 0} Nts</td>
     </tr>
   `).join('');
 
@@ -349,18 +349,18 @@ function buildSelfContainedPdfHtml(data, agencySettings, qrDataUrl, baseUrl, isW
   if (showMakkah) {
     ziyaratRowsHtml += `
       <tr>
-        <td style="font-weight: 900; color: #047857;">Makkah</td>
-        <td style="font-weight: 800;">Yes</td>
-        <td style="font-weight: 800;">${formatDateToDMY(data.ziyarat.makkahDate)}</td>
+        <td data-label="City" style="font-weight: 900; color: #047857;">Makkah</td>
+        <td data-label="Ziyarat Included" style="font-weight: 800;">Yes</td>
+        <td data-label="Date" style="font-weight: 800;">${formatDateToDMY(data.ziyarat.makkahDate)}</td>
       </tr>
     `;
   }
   if (showMadinah) {
     ziyaratRowsHtml += `
       <tr style="${showMakkah ? 'background-color: #f9fafb;' : ''}">
-        <td style="font-weight: 900; color: #047857;">Madinah</td>
-        <td style="font-weight: 800;">Yes</td>
-        <td style="font-weight: 800;">${formatDateToDMY(data.ziyarat.madinahDate)}</td>
+        <td data-label="City" style="font-weight: 900; color: #047857;">Madinah</td>
+        <td data-label="Ziyarat Included" style="font-weight: 800;">Yes</td>
+        <td data-label="Date" style="font-weight: 800;">${formatDateToDMY(data.ziyarat.madinahDate)}</td>
       </tr>
     `;
   }
@@ -485,6 +485,138 @@ function buildSelfContainedPdfHtml(data, agencySettings, qrDataUrl, baseUrl, isW
       .terms-title { font-weight: 900; color: #065f46; margin-bottom: 3px; font-size: 9.5px; }
       
       .footer { display: flex; justify-content: space-between; align-items: center; padding-top: 4px; border-top: 1px solid #d1d5db; font-size: 8.5px; color: #6b7280; font-weight: bold; }
+      
+      @media (max-width: 767px) {
+        .pdf-container, .voucher-container {
+          width: 100% !important;
+          max-width: 100% !important;
+          margin: 0 auto !important;
+          padding: 10px !important;
+          border-radius: 8px !important;
+          border: none !important;
+          box-shadow: none !important;
+        }
+        .header {
+          display: flex !important;
+          flex-direction: column !important;
+          align-items: center !important;
+          gap: 12px !important;
+          padding-bottom: 12px !important;
+        }
+        .booking-agent-header, .qr-header-box {
+          position: static !important;
+          width: 100% !important;
+          max-width: 320px !important;
+          margin: 0 auto !important;
+          display: flex !important;
+          justify-content: center !important;
+          align-items: center !important;
+          text-align: center !important;
+        }
+        .booking-agent-header {
+          flex-direction: column !important;
+          padding: 6px 12px !important;
+          order: 2 !important;
+        }
+        .qr-header-box {
+          flex-direction: row !important;
+          padding: 6px 12px !important;
+          justify-content: center !important;
+          order: 3 !important;
+        }
+        .brand-info {
+          order: 1 !important;
+        }
+        .banner {
+          flex-direction: column !important;
+          align-items: center !important;
+          gap: 4px !important;
+          text-align: center !important;
+        }
+        .banner > div {
+          display: flex !important;
+          flex-wrap: wrap !important;
+          justify-content: center !important;
+          gap: 8px !important;
+        }
+        .banner > div > span {
+          margin-left: 0 !important;
+        }
+        .info-grid {
+          display: grid !important;
+          grid-template-columns: repeat(2, 1fr) !important;
+          gap: 8px !important;
+        }
+        .info-grid > div:last-child {
+          grid-column: span 2 !important;
+        }
+        
+        table, thead, tbody, th, td, tr {
+          display: block !important;
+          width: 100% !important;
+        }
+        thead {
+          display: none !important;
+        }
+        tr {
+          margin-bottom: 10px !important;
+          border: 1px solid #cbd5e1 !important;
+          border-radius: 6px !important;
+          background-color: #ffffff !important;
+          padding: 6px !important;
+          overflow: hidden !important;
+          box-shadow: 0 1px 2px 0 rgba(0,0,0,0.05) !important;
+        }
+        tr:nth-child(even) {
+          background-color: #f8fafc !important;
+        }
+        td {
+          border: none !important;
+          border-bottom: 1px solid #f1f5f9 !important;
+          position: relative !important;
+          padding: 6px 8px 6px 45% !important;
+          text-align: right !important;
+          font-size: 10px !important;
+          display: flex !important;
+          justify-content: flex-end !important;
+          align-items: center !important;
+          min-height: 28px !important;
+        }
+        td:last-child {
+          border-bottom: none !important;
+        }
+        td::before {
+          content: attr(data-label) !important;
+          position: absolute !important;
+          left: 8px !important;
+          width: 40% !important;
+          text-align: left !important;
+          font-weight: 800 !important;
+          color: #047857 !important;
+          text-transform: uppercase !important;
+          font-size: 8px !important;
+          white-space: nowrap !important;
+          overflow: hidden !important;
+          text-overflow: ellipsis !important;
+        }
+        td[colspan] {
+          padding-left: 8px !important;
+          text-align: center !important;
+          justify-content: center !important;
+        }
+        td[colspan]::before {
+          display: none !important;
+        }
+        .terms-grid {
+          flex-direction: column !important;
+          gap: 8px !important;
+        }
+        .footer {
+          flex-direction: column !important;
+          gap: 4px !important;
+          text-align: center !important;
+        }
+      }
     </style>
   </head>
   <body>
@@ -518,7 +650,7 @@ function buildSelfContainedPdfHtml(data, agencySettings, qrDataUrl, baseUrl, isW
               <span style="font-family: monospace; font-weight: 900; color: #111827; font-size: 9px;">${data.id}</span>
             </div>
           </div>
-          <div style="display: flex; flex-direction: column; align-items: center;">
+          <div class="brand-info" style="display: flex; flex-direction: column; align-items: center;">
             ${letterheadLogoHtml}
             <div class="brand-title">${agencySettings.agencyName || 'SAUDI PAK GROUP OF TRAVELS'}</div>
             <div class="brand-tagline">${agencySettings.tagline || 'Official Services Voucher'}</div>
@@ -645,22 +777,22 @@ function buildSelfContainedPdfHtml(data, agencySettings, qrDataUrl, baseUrl, isW
             </thead>
             <tbody>
               <tr>
-                <td style="font-weight: 900; color: #047857;">Departure</td>
-                <td style="font-weight: 800;">${data.flight ? data.flight.departureAirline || '-' : '-'}</td>
-                <td style="font-weight: 900; font-family: monospace;">${data.flight ? data.flight.departureFlightNo || '-' : '-'}</td>
-                <td style="font-weight: 900; color: #065f46;">${data.flight ? data.flight.departureRoute || '-' : '-'}</td>
-                <td style="font-weight: 800;">${formatDateToDMY(data.flight ? data.flight.departureDate : '')}</td>
-                <td style="font-weight: 800; text-align: center;">${data.flight ? data.flight.departureTime || '-' : '-'}</td>
-                <td style="font-weight: 800; text-align: center;">${data.flight ? data.flight.departureArrivalTime || '-' : '-'}</td>
+                <td data-label="Flight Type" style="font-weight: 900; color: #047857;">Departure</td>
+                <td data-label="Airline" style="font-weight: 800;">${data.flight ? data.flight.departureAirline || '-' : '-'}</td>
+                <td data-label="Flight No" style="font-weight: 900; font-family: monospace;">${data.flight ? data.flight.departureFlightNo || '-' : '-'}</td>
+                <td data-label="Route" style="font-weight: 900; color: #065f46;">${data.flight ? data.flight.departureRoute || '-' : '-'}</td>
+                <td data-label="Date" style="font-weight: 800;">${formatDateToDMY(data.flight ? data.flight.departureDate : '')}</td>
+                <td data-label="Dep. Time" style="font-weight: 800; text-align: center;">${data.flight ? data.flight.departureTime || '-' : '-'}</td>
+                <td data-label="Arrival Time" style="font-weight: 800; text-align: center;">${data.flight ? data.flight.departureArrivalTime || '-' : '-'}</td>
               </tr>
               <tr style="background-color: #f9fafb;">
-                <td style="font-weight: 900; color: #047857;">Return</td>
-                <td style="font-weight: 800;">${data.flight ? data.flight.returnAirline || '-' : '-'}</td>
-                <td style="font-weight: 900; font-family: monospace;">${data.flight ? data.flight.returnFlightNo || '-' : '-'}</td>
-                <td style="font-weight: 900; color: #065f46;">${data.flight ? data.flight.returnRoute || '-' : '-'}</td>
-                <td style="font-weight: 800;">${formatDateToDMY(data.flight ? data.flight.returnDate : '')}</td>
-                <td style="font-weight: 800; text-align: center;">${data.flight ? data.flight.returnTime || '-' : '-'}</td>
-                <td style="font-weight: 800; text-align: center;">${data.flight ? data.flight.returnArrivalTime || '-' : '-'}</td>
+                <td data-label="Flight Type" style="font-weight: 900; color: #047857;">Return</td>
+                <td data-label="Airline" style="font-weight: 800;">${data.flight ? data.flight.returnAirline || '-' : '-'}</td>
+                <td data-label="Flight No" style="font-weight: 900; font-family: monospace;">${data.flight ? data.flight.returnFlightNo || '-' : '-'}</td>
+                <td data-label="Route" style="font-weight: 900; color: #065f46;">${data.flight ? data.flight.returnRoute || '-' : '-'}</td>
+                <td data-label="Date" style="font-weight: 800;">${formatDateToDMY(data.flight ? data.flight.returnDate : '')}</td>
+                <td data-label="Dep. Time" style="font-weight: 800; text-align: center;">${data.flight ? data.flight.returnTime || '-' : '-'}</td>
+                <td data-label="Arrival Time" style="font-weight: 800; text-align: center;">${data.flight ? data.flight.returnArrivalTime || '-' : '-'}</td>
               </tr>
             </tbody>
           </table>
@@ -703,11 +835,11 @@ function buildSelfContainedPdfHtml(data, agencySettings, qrDataUrl, baseUrl, isW
             </thead>
             <tbody>
               <tr>
-                <td style="font-weight: 800; color: #111827;">${data.transport ? formatDateToDMY(data.transport.date) : '-'}</td>
-                <td style="font-weight: 800; color: #111827;">${data.transport ? data.transport.transporter || '-' : '-'}</td>
-                <td style="font-weight: 800; color: #111827;">${data.transport ? data.transport.vehicleType || '-' : '-'}</td>
-                <td style="font-weight: 900; color: #047857; font-family: monospace;">${data.transport ? data.transport.routeNo || '-' : '-'}</td>
-                <td style="font-weight: 800; color: #111827;">${data.transport ? data.transport.route || '-' : '-'}</td>
+                <td data-label="Date" style="font-weight: 800; color: #111827;">${data.transport ? formatDateToDMY(data.transport.date) : '-'}</td>
+                <td data-label="Company" style="font-weight: 800; color: #111827;">${data.transport ? data.transport.transporter || '-' : '-'}</td>
+                <td data-label="Vehicle" style="font-weight: 800; color: #111827;">${data.transport ? data.transport.vehicleType || '-' : '-'}</td>
+                <td data-label="Route No" style="font-weight: 900; color: #047857; font-family: monospace;">${data.transport ? data.transport.routeNo || '-' : '-'}</td>
+                <td data-label="Transport Route" style="font-weight: 800; color: #111827;">${data.transport ? data.transport.route || '-' : '-'}</td>
               </tr>
             </tbody>
           </table>
