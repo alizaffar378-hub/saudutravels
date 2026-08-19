@@ -259,7 +259,7 @@ app.get('/api/pdf-config', (req, res) => {
 function buildSelfContainedPdfHtml(data, agencySettings, qrDataUrl, baseUrl, isWebView = false) {
   const status = data.status || 'NOT APPROVED';
   const statusText = status === 'APPROVED' ? 'APPROVED' : status === 'CANCELLED' ? 'CANCELLED' : 'NOT APPROVED';
-  const statusColor = status === 'APPROVED' ? 'rgba(0, 135, 90, 0.16)' : 'rgba(239, 68, 68, 0.16)';
+  const statusColor = status === 'APPROVED' ? 'rgba(0, 135, 90, 0.08)' : 'rgba(239, 68, 68, 0.08)';
   const svgWatermark = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 500 300"><text x="50%" y="50%" fill="${statusColor}" font-family="Impact, Arial Black, Arial, sans-serif" font-size="64" font-weight="950" text-anchor="middle" dominant-baseline="middle" transform="rotate(-30 250 150)">${statusText}</text></svg>`;
   const watermarkBase64 = Buffer.from(svgWatermark).toString('base64');
   const watermarkUrl = `data:image/svg+xml;base64,${watermarkBase64}`;
@@ -438,7 +438,7 @@ function buildSelfContainedPdfHtml(data, agencySettings, qrDataUrl, baseUrl, isW
         background-image: url('${watermarkUrl}') !important;
         background-repeat: no-repeat !important;
         background-position: center 50% !important;
-        background-size: 75% !important;
+        background-size: contain !important;
       }
       
       .header { display: flex; flex-direction: column; align-items: center; justify-content: center; text-align: center; padding-bottom: 8px; border-bottom: 2px solid #047857; margin-bottom: 8px; width: 100%; position: relative; }
