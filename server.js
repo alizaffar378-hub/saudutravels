@@ -427,17 +427,38 @@ function buildSelfContainedPdfHtml(data, agencySettings, qrDataUrl, baseUrl, isW
         justify-content: space-between !important;
         ${isWebView ? 'border-radius: 12px !important; box-shadow: 0 10px 15px -3px rgba(0,0,0,0.1), 0 4px 6px -2px rgba(0,0,0,0.05) !important; border: 1px solid #e2e8f0 !important;' : ''}
       }
-      .watermark-overlay {
+      .watermark-stamp {
         position: absolute !important;
         top: 50% !important;
         left: 50% !important;
         transform: translate(-50%, -50%) rotate(-30deg) !important;
-        width: 85% !important;
+        width: 80% !important;
+        max-width: 500px !important;
         text-align: center !important;
         pointer-events: none !important;
         user-select: none !important;
         z-index: 0 !important;
         opacity: 0.08 !important;
+        border: 8px double currentColor !important;
+        padding: 15px 30px !important;
+        border-radius: 12px !important;
+        box-sizing: border-box !important;
+        display: inline-block !important;
+        object-fit: contain !important;
+      }
+      .watermark-stamp > div {
+        font-family: 'Impact', 'Arial Black', 'Arial', sans-serif !important;
+        font-size: 55pt !important;
+        font-weight: 950 !important;
+        letter-spacing: 5px !important;
+        white-space: nowrap !important;
+        line-height: 1.1 !important;
+        text-transform: uppercase !important;
+        display: inline-block !important;
+        max-width: 100% !important;
+        overflow: hidden !important;
+        text-overflow: ellipsis !important;
+        object-fit: contain !important;
       }
       
       .header { display: flex; flex-direction: column; align-items: center; justify-content: center; text-align: center; padding-bottom: 8px; border-bottom: 2px solid #047857; margin-bottom: 8px; width: 100%; position: relative; }
@@ -617,14 +638,14 @@ function buildSelfContainedPdfHtml(data, agencySettings, qrDataUrl, baseUrl, isW
           text-align: center !important;
         }
         /* Mobile Watermark overrides */
-        .watermark-overlay {
-          width: 90% !important;
+        .watermark-stamp {
+          width: 70% !important;
+          border-width: 4px !important;
+          padding: 8px 16px !important;
           opacity: 0.05 !important;
         }
-        .watermark-overlay > div {
-          font-size: 28pt !important;
-          border-width: 4px !important;
-          padding: 6px 12px !important;
+        .watermark-stamp > div {
+          font-size: 6.5vw !important;
           letter-spacing: 2px !important;
         }
       }
@@ -640,9 +661,9 @@ function buildSelfContainedPdfHtml(data, agencySettings, qrDataUrl, baseUrl, isW
       </div>
     ` : ''}
     <div class="voucher-container">
-      <div class="watermark-overlay" style="color: ${data.status === 'APPROVED' ? '#00875A' : '#EF4444'} !important;">
-        <div style="font-family: 'Impact', 'Arial Black', 'Arial', sans-serif !important; font-size: ${data.status === 'APPROVED' ? '85pt' : '70pt'} !important; font-weight: 950 !important; border: 8px double currentColor !important; padding: 15px 40px !important; border-radius: 12px !important; letter-spacing: 6px !important; white-space: nowrap !important; line-height: 1.1 !important; text-transform: uppercase !important; display: inline-block !important;">
-          ${data.status === 'APPROVED' ? 'APPROVED' : 'NOT APPROVED'}
+      <div class="watermark-stamp" style="color: ${data.status === 'APPROVED' ? '#00875A' : '#EF4444'} !important;">
+        <div>
+          ${status}
         </div>
       </div>
       <div>

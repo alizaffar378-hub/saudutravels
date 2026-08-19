@@ -196,6 +196,40 @@ async function renderA4VoucherHTML(data, agencySettings) {
   const status = data.status || 'NOT APPROVED';
   return `
     <style>
+      .watermark-stamp {
+        position: absolute !important;
+        top: 50% !important;
+        left: 50% !important;
+        transform: translate(-50%, -50%) rotate(-30deg) !important;
+        width: 80% !important;
+        max-width: 500px !important;
+        text-align: center !important;
+        pointer-events: none !important;
+        user-select: none !important;
+        z-index: 0 !important;
+        opacity: 0.08 !important;
+        border: 8px double currentColor !important;
+        padding: 15px 30px !important;
+        border-radius: 12px !important;
+        box-sizing: border-box !important;
+        display: inline-block !important;
+        object-fit: contain !important;
+      }
+      .watermark-stamp > div {
+        font-family: 'Impact', 'Arial Black', 'Arial', sans-serif !important;
+        font-size: 55pt !important;
+        font-weight: 950 !important;
+        letter-spacing: 5px !important;
+        white-space: nowrap !important;
+        line-height: 1.1 !important;
+        text-transform: uppercase !important;
+        display: inline-block !important;
+        max-width: 100% !important;
+        overflow: hidden !important;
+        text-overflow: ellipsis !important;
+        object-fit: contain !important;
+      }
+      
       @media (max-width: 767px) {
         .pdf-container, .voucher-wrapper, .voucher-root-container {
           padding: 10px !important;
@@ -260,22 +294,22 @@ async function renderA4VoucherHTML(data, agencySettings) {
           display: none !important;
         }
         /* Mobile Watermark overrides */
-        .watermark-overlay {
-          width: 90% !important;
+        .watermark-stamp {
+          width: 70% !important;
+          border-width: 4px !important;
+          padding: 8px 16px !important;
           opacity: 0.05 !important;
         }
-        .watermark-overlay > div {
-          font-size: 28pt !important;
-          border-width: 4px !important;
-          padding: 6px 12px !important;
+        .watermark-stamp > div {
+          font-size: 6.5vw !important;
           letter-spacing: 2px !important;
         }
       }
     </style>
     <div style="width: 100%; max-width: 100%; box-sizing: border-box;" class="a4-voucher-page pdf-container voucher-wrapper pdf-page-container voucher-root-container flex flex-col justify-between overflow-hidden p-4 bg-white text-slate-900 text-[11px] leading-snug">
-      <div class="watermark-overlay" style="position: absolute !important; top: 50% !important; left: 50% !important; transform: translate(-50%, -50%) rotate(-30deg) !important; width: 85% !important; text-align: center !important; pointer-events: none !important; user-select: none !important; z-index: 0 !important; opacity: 0.08 !important; color: ${status === 'APPROVED' ? '#00875A' : '#EF4444'} !important;">
-        <div style="font-family: 'Impact', 'Arial Black', 'Arial', sans-serif !important; font-size: ${status === 'APPROVED' ? '85pt' : '70pt'} !important; font-weight: 950 !important; border: 8px double currentColor !important; padding: 15px 40px !important; border-radius: 12px !important; letter-spacing: 6px !important; white-space: nowrap !important; line-height: 1.1 !important; text-transform: uppercase !important; display: inline-block !important;">
-          ${status === 'APPROVED' ? 'APPROVED' : 'NOT APPROVED'}
+      <div class="watermark-stamp" style="color: ${status === 'APPROVED' ? '#00875A' : '#EF4444'} !important;">
+        <div>
+          ${status}
         </div>
       </div>
       
