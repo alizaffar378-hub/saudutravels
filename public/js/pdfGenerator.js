@@ -259,10 +259,21 @@ async function renderA4VoucherHTML(data, agencySettings) {
         td[colspan]::before {
           display: none !important;
         }
+        /* Mobile Watermark overrides */
+        .watermark-overlay {
+          width: 90% !important;
+          opacity: 0.05 !important;
+        }
+        .watermark-overlay > div {
+          font-size: 28pt !important;
+          border-width: 4px !important;
+          padding: 6px 12px !important;
+          letter-spacing: 2px !important;
+        }
       }
     </style>
     <div style="width: 100%; max-width: 100%; box-sizing: border-box;" class="a4-voucher-page pdf-container voucher-wrapper pdf-page-container voucher-root-container flex flex-col justify-between overflow-hidden p-4 bg-white text-slate-900 text-[11px] leading-snug">
-      <div class="watermark-overlay" style="position: absolute !important; top: 50% !important; left: 50% !important; transform: translate(-50%, -50%) rotate(-30deg) !important; width: 85% !important; text-align: center !important; pointer-events: none !important; user-select: none !important; z-index: 9999 !important; opacity: 0.18 !important; color: ${status === 'APPROVED' ? '#00875A' : '#EF4444'} !important;">
+      <div class="watermark-overlay" style="position: absolute !important; top: 50% !important; left: 50% !important; transform: translate(-50%, -50%) rotate(-30deg) !important; width: 85% !important; text-align: center !important; pointer-events: none !important; user-select: none !important; z-index: 0 !important; opacity: 0.08 !important; color: ${status === 'APPROVED' ? '#00875A' : '#EF4444'} !important;">
         <div style="font-family: 'Impact', 'Arial Black', 'Arial', sans-serif !important; font-size: ${status === 'APPROVED' ? '85pt' : '70pt'} !important; font-weight: 950 !important; border: 8px double currentColor !important; padding: 15px 40px !important; border-radius: 12px !important; letter-spacing: 6px !important; white-space: nowrap !important; line-height: 1.1 !important; text-transform: uppercase !important; display: inline-block !important;">
           ${status === 'APPROVED' ? 'APPROVED' : 'NOT APPROVED'}
         </div>

@@ -436,8 +436,8 @@ function buildSelfContainedPdfHtml(data, agencySettings, qrDataUrl, baseUrl, isW
         text-align: center !important;
         pointer-events: none !important;
         user-select: none !important;
-        z-index: 9999 !important;
-        opacity: 0.18 !important;
+        z-index: 0 !important;
+        opacity: 0.08 !important;
       }
       
       .header { display: flex; flex-direction: column; align-items: center; justify-content: center; text-align: center; padding-bottom: 8px; border-bottom: 2px solid #047857; margin-bottom: 8px; width: 100%; position: relative; }
@@ -615,6 +615,17 @@ function buildSelfContainedPdfHtml(data, agencySettings, qrDataUrl, baseUrl, isW
           flex-direction: column !important;
           gap: 4px !important;
           text-align: center !important;
+        }
+        /* Mobile Watermark overrides */
+        .watermark-overlay {
+          width: 90% !important;
+          opacity: 0.05 !important;
+        }
+        .watermark-overlay > div {
+          font-size: 28pt !important;
+          border-width: 4px !important;
+          padding: 6px 12px !important;
+          letter-spacing: 2px !important;
         }
       }
     </style>
