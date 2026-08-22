@@ -66,18 +66,78 @@ const resolveAgentName = (email, role) => {
 
 // --- API ENDPOINTS ---
 
+const DEFAULT_AGENCY_SETTINGS = {
+  agencyName: 'SAUDI PAK GROUP OF TRAVELS',
+  tagline: 'Hajj & Umrah Pilgrimage',
+  phone1: '03169666666',
+  phone2: '+966 50 9876543',
+  email: 'saudipakavi@gmail.com',
+  website: 'www.saudipak.com.pk',
+  address: 'Suite # 6-7, Hajvari Arcade, Kutchery Road, Multan',
+  licenseNo: 'DTS-4492'
+};
+
+async function fetchAgencySettingsDb() {
+  try {
+    const { data, error } = await supabase
+      .from('vouchers')
+      .select('form_data')
+      .eq('id', 'agency_settings')
+      .maybeSingle();
+
+    if (data && data.form_data && data.form_data.agencyName) {
+      return data.form_data;
+    }
+  } catch (err) {
+    console.error("Error fetching agency settings from Supabase:", err.message);
+  }
+
+  const localSettings = readJSONFile(SETTINGS_FILE, {});
+  if (localSettings && localSettings.agencyName) {
+    return localSettings;
+  }
+
+  return DEFAULT_AGENCY_SETTINGS;
+}
+
+async function saveAgencySettingsDb(settings) {
+  writeJSONFile(SETTINGS_FILE, settings);
+
+  try {
+    const payload = {
+      id: 'agency_settings',
+      voucher_ref: 'agency_settings',
+      family_head: 'Agency Settings',
+      package_name: 'Agency Settings',
+      voucher_date: new Date().toISOString().split('T')[0],
+      status: 'APPROVED',
+      created_by: 'system',
+      form_data: settings
+    };
+    const { error } = await supabase
+      .from('vouchers')
+      .upsert(payload);
+    
+    if (error) throw error;
+    return true;
+  } catch (err) {
+    console.error("Error saving agency settings to Supabase:", err.message);
+    return false;
+  }
+}
+
 // 1. GET Settings
-app.get('/api/settings', (req, res) => {
-  const settings = readJSONFile(SETTINGS_FILE, {});
+app.get('/api/settings', async (req, res) => {
+  const settings = await fetchAgencySettingsDb();
   res.json({ success: true, settings });
 });
 
 // 2. POST Settings
-app.post('/api/settings', (req, res) => {
+app.post('/api/settings', async (req, res) => {
   const newSettings = req.body;
-  const currentSettings = readJSONFile(SETTINGS_FILE, {});
+  const currentSettings = await fetchAgencySettingsDb();
   const updatedSettings = { ...currentSettings, ...newSettings };
-  writeJSONFile(SETTINGS_FILE, updatedSettings);
+  await saveAgencySettingsDb(updatedSettings);
   res.json({ success: true, settings: updatedSettings });
 });
 
@@ -87,6 +147,7 @@ app.get('/api/vouchers', async (req, res) => {
     const { data, error } = await supabase
       .from('vouchers')
       .select('*')
+      .neq('id', 'agency_settings')
       .order('created_at', { ascending: false });
 
     if (error) throw error;
@@ -1053,17 +1114,7 @@ app.post('/api/generate-pdf', async (req, res) => {
       }
     }
     
-    const savedSettings = readJSONFile(SETTINGS_FILE, {});
-    const agencySettings = req.body.agencySettings || (savedSettings && savedSettings.agencyName ? savedSettings : {
-      agencyName: 'SAUDI PAK GROUP OF TRAVELS',
-      tagline: 'Hajj & Umrah Pilgrimage',
-      phone1: '03169666666',
-      phone2: '+966 50 9876543',
-      email: 'saudipakavi@gmail.com',
-      website: 'www.saudipak.com.pk',
-      address: 'Suite # 6-7, Hajvari Arcade, Kutchery Road, Multan',
-      licenseNo: 'DTS-4492'
-    });
+    const agencySettings = req.body.agencySettings || await fetchAgencySettingsDb();
 
     // Generate QR Code data URL if needed
     let qrDataUrl = '';
@@ -1447,17 +1498,7 @@ app.get('/verify', async (req, res) => {
     const voucherRef = voucher.voucher_ref || voucher.id;
 
     // Load agency settings
-    const savedSettings = readJSONFile(SETTINGS_FILE, {});
-    const agencySettings = savedSettings && savedSettings.agencyName ? savedSettings : {
-      agencyName: 'SAUDI PAK GROUP OF TRAVELS',
-      tagline: 'Hajj & Umrah Pilgrimage',
-      phone1: '03169666666',
-      phone2: '+966 50 9876543',
-      email: 'saudipakavi@gmail.com',
-      website: 'www.saudipak.com.pk',
-      address: 'Suite # 6-7, Hajvari Arcade, Kutchery Road, Multan',
-      licenseNo: 'DTS-4492'
-    };
+    const agencySettings = await fetchAgencySettingsDb();
 
     const protocol = req.headers['x-forwarded-proto'] || req.protocol || 'http';
     const host = req.headers.host;
