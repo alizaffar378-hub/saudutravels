@@ -358,14 +358,16 @@
 
               <div>
                 <label class="block font-bold text-slate-700 mb-1">Vehicle Type</label>
-                <select id="vehicleType" class="w-full border border-slate-300 rounded-lg p-2 bg-white font-medium">
+                <select id="vehicleType" onchange="handleVehicleTypeChange()" class="w-full border border-slate-300 rounded-lg p-2 bg-white font-medium">
                   <option value="Private GMC / Yukon (4x4)">Private GMC / Yukon (4x4)</option>
                   <option value="Coaster Luxury Bus (25 Seater)">Coaster Luxury Bus (25 Seater)</option>
                   <option value="Full VIP Bus (49 Seater)">Full VIP Bus (49 Seater)</option>
                   <option value="Hyundai H1 / HiAce Minivan">Hyundai H1 / HiAce Minivan</option>
                   <option value="Private Sedan Car (Camry/Sonata)">Private Sedan Car (Camry/Sonata)</option>
                   <option value="Haramain High-Speed Train">Haramain High-Speed Train</option>
+                  <option value="CUSTOM">-- Custom Vehicle Type --</option>
                 </select>
+                <input type="text" id="vehicleTypeCustom" placeholder="Enter custom vehicle type..." class="hidden mt-1.5 w-full text-xs border border-slate-300 rounded-lg p-2 bg-white font-medium">
               </div>
 
               <div>
@@ -401,8 +403,8 @@
                   <input type="text" id="depFlightNo" placeholder="Flight No (e.g. SV-739)" class="border border-slate-300 rounded p-1.5 bg-white">
                   <input type="text" id="depRoute" placeholder="Route (LHE -> JED)" class="border border-slate-300 rounded p-1.5 bg-white">
                   <input type="text" id="depDate" placeholder="DD/MM/YYYY" class="border border-slate-300 rounded p-1.5 bg-white font-medium">
-                  <input type="text" id="depTime" placeholder="Dep Time (04:30 AM)" class="border border-slate-300 rounded p-1.5 bg-white">
-                  <input type="text" id="depArrivalTime" placeholder="Arr Time (07:30 AM)" class="border border-slate-300 rounded p-1.5 bg-white">
+                  <input type="text" id="depTime" placeholder="Dep Time (e.g. 04:30)" class="border border-slate-300 rounded p-1.5 bg-white">
+                  <input type="text" id="depArrivalTime" placeholder="Arr Time (e.g. 07:30)" class="border border-slate-300 rounded p-1.5 bg-white">
                 </div>
               </div>
 
@@ -417,8 +419,8 @@
                   <input type="text" id="retFlightNo" placeholder="Flight No (e.g. SV-738)" class="border border-slate-300 rounded p-1.5 bg-white">
                   <input type="text" id="retRoute" placeholder="Route (MED -> LHE)" class="border border-slate-300 rounded p-1.5 bg-white">
                   <input type="text" id="retDate" placeholder="DD/MM/YYYY" class="border border-slate-300 rounded p-1.5 bg-white font-medium">
-                  <input type="text" id="retTime" placeholder="Dep Time (06:15 PM)" class="border border-slate-300 rounded p-1.5 bg-white">
-                  <input type="text" id="retArrivalTime" placeholder="Arr Time (09:15 PM)" class="border border-slate-300 rounded p-1.5 bg-white">
+                  <input type="text" id="retTime" placeholder="Dep Time (e.g. 18:15)" class="border border-slate-300 rounded p-1.5 bg-white">
+                  <input type="text" id="retArrivalTime" placeholder="Arr Time (e.g. 21:15)" class="border border-slate-300 rounded p-1.5 bg-white">
                 </div>
               </div>
             </div>
