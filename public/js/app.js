@@ -29,6 +29,19 @@ function safeGetLocalStorage(key, fallback = null) {
   }
 }
 
+// Auth Headers Helper
+function getAuthHeaders(extraHeaders = {}) {
+  const session = safeGetLocalStorage('tvg_session', null);
+  const headers = { ...extraHeaders };
+  if (session) {
+    if (session.role) headers['x-user-role'] = session.role;
+    if (session.email) headers['x-user-email'] = session.email;
+    const token = session.token || session.role || 'authenticated';
+    headers['Authorization'] = `Bearer ${token}`;
+  }
+  return headers;
+}
+
 // On Document Load
 document.addEventListener('DOMContentLoaded', async () => {
   // Listen for navigation state pop events
@@ -192,7 +205,7 @@ document.addEventListener('DOMContentLoaded', async () => {
 });
 
 async function initDashboard() {
-  const session = localStorage.getItem('tvg_session');
+  const session = safeGetLocalStorage('tvg_session', null);
   if (!session) return;
 
   try {
@@ -206,8 +219,8 @@ async function initDashboard() {
     await fetchBookingAgents();
 
     // Load System Users if admin
-    const user = JSON.parse(session);
-    if (user.role === 'admin') {
+    const userRole = (session.role || '').toLowerCase();
+    if (userRole.includes('admin')) {
       await fetchSystemUsers();
     }
   } catch (err) {
@@ -1040,11 +1053,7 @@ async function generateAndSaveVoucher(e) {
 
     const response = await fetch('/api/vouchers', {
       method: 'POST',
-      headers: { 
-        'Content-Type': 'application/json',
-        'x-user-role': userRole,
-        'x-user-email': userEmail
-      },
+      headers: getAuthHeaders({ 'Content-Type': 'application/json' }),
       body: JSON.stringify(formData)
     });
 
@@ -1054,6 +1063,7 @@ async function generateAndSaveVoucher(e) {
         const resultErr = await response.json();
         if (resultErr && resultErr.message) errMsg = resultErr.message;
       } catch (_) {}
+      console.error(`[generateAndSaveVoucher] HTTP Error ${response.status}:`, errMsg);
       throw new Error(errMsg);
     }
 
@@ -1082,7 +1092,14 @@ let bookingAgentsCache = [];
 
 async function fetchBookingAgents() {
   try {
-    const res = await fetch('/api/booking-agents');
+    const res = await fetch('/api/booking-agents', {
+      headers: getAuthHeaders()
+    });
+    if (!res.ok) {
+      const errText = await res.text();
+      console.error(`[fetchBookingAgents] HTTP Error ${res.status}:`, errText);
+      return;
+    }
     const result = await res.json();
     if (result.success && result.agents) {
       bookingAgentsCache = result.agents;
@@ -1251,10 +1268,20 @@ async function saveAgencySettings(e) {
 // --- SAVED VOUCHERS ARCHIVE ---
 async function fetchSavedVouchers() {
   try {
-    const res = await fetch('/api/vouchers');
+    const res = await fetch('/api/vouchers', {
+      headers: getAuthHeaders()
+    });
+    if (!res.ok) {
+      const errBody = await res.text();
+      console.error(`[fetchSavedVouchers] HTTP Error ${res.status}:`, errBody);
+      throw new Error(`HTTP ${res.status}`);
+    }
     const result = await res.json();
     if (result.success && Array.isArray(result.vouchers || result.data)) {
       savedVouchersList = result.vouchers || result.data;
+      console.log(`[fetchSavedVouchers] Successfully loaded ${savedVouchersList.length} vouchers from server.`);
+    } else {
+      console.warn("[fetchSavedVouchers] API returned unexpected format:", result);
     }
   } catch (err) {
     console.warn("Failed to fetch vouchers from API, using LocalStorage: ", err);
@@ -1531,18 +1558,10 @@ function loadVoucherToForm(id) {
 async function deleteSavedVoucher(id) {
   if (!confirm(`Are you sure you want to delete Voucher Ref: ${id}?`)) return;
 
-  const session = localStorage.getItem('tvg_session');
-  const user = session ? JSON.parse(session) : null;
-  const userRole = user ? user.role : 'staff_pending';
-  const userEmail = user ? user.email : 'unknown';
-
   try {
     const res = await fetch(`/api/vouchers/${id}`, { 
       method: 'DELETE',
-      headers: {
-        'x-user-role': userRole,
-        'x-user-email': userEmail
-      }
+      headers: getAuthHeaders()
     });
     const result = await res.json();
     if (result.success) {
@@ -1644,9 +1663,9 @@ function renderDrawerVouchers(vouchers) {
     return;
   }
 
-  const session = localStorage.getItem('tvg_session');
-  const user = session ? JSON.parse(session) : null;
-  const isAuthorizedToApprove = user && (user.role === 'admin' || user.role === 'staff_approved');
+  const session = safeGetLocalStorage('tvg_session', null);
+  const userRole = (session?.role || '').toLowerCase();
+  const isAuthorizedToApprove = userRole.includes('admin') || userRole.includes('staff_approved');
 
   listContainer.innerHTML = vouchers.map(v => {
     const status = v.status || 'NOT APPROVED';
@@ -1724,19 +1743,10 @@ async function reDownloadVoucherPDF(id) {
   const filename = `Voucher_${v.id}_${(v.familyHead || 'Guest').replace(/\s+/g, '_')}.pdf`;
   showToast('Generating A4 PDF via Puppeteer...', 'info');
 
-  const session = localStorage.getItem('tvg_session');
-  const user = session ? JSON.parse(session) : null;
-  const userRole = user ? user.role : 'staff_pending';
-  const userEmail = user ? user.email : 'unknown';
-
   try {
     const response = await fetch('/api/generate-pdf', {
       method: 'POST',
-      headers: { 
-        'Content-Type': 'application/json',
-        'x-user-role': userRole,
-        'x-user-email': userEmail
-      },
+      headers: getAuthHeaders({ 'Content-Type': 'application/json' }),
       body: JSON.stringify({ voucherData: v, filename })
     });
     if (response.ok) {
@@ -1750,6 +1760,10 @@ async function reDownloadVoucherPDF(id) {
       document.body.removeChild(a);
       window.URL.revokeObjectURL(url);
       showToast('PDF downloaded successfully!', 'success');
+    } else {
+      const errText = await response.text();
+      console.error(`[reDownloadVoucherPDF] HTTP ${response.status}:`, errText);
+      showToast('Failed to download PDF from server', 'error');
     }
   } catch (err) {
     console.error(err);
@@ -1760,16 +1774,10 @@ async function reDownloadVoucherPDF(id) {
 async function deleteVoucherFromDrawer(id) {
   if (!confirm(`Are you sure you want to delete Voucher Ref: ${id}?`)) return;
 
-  const session = localStorage.getItem('tvg_session');
-  const user = session ? JSON.parse(session) : null;
-  const userRole = user ? user.role : 'staff_pending';
-
   try {
     const res = await fetch(`/api/vouchers/${id}`, { 
       method: 'DELETE',
-      headers: {
-        'x-user-role': userRole
-      }
+      headers: getAuthHeaders()
     });
     const result = await res.json();
     if (result.success) {
@@ -1783,20 +1791,23 @@ async function deleteVoucherFromDrawer(id) {
 }
 
 async function approveVoucher(id) {
-  const session = localStorage.getItem('tvg_session');
+  const session = safeGetLocalStorage('tvg_session', null);
   if (!session) return;
-  const user = JSON.parse(session);
 
   showToast(`Approving voucher ${id}...`, 'info');
 
   try {
     const response = await fetch(`/api/vouchers/${id}/approve`, {
       method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        'x-user-role': user.role
-      }
+      headers: getAuthHeaders({ 'Content-Type': 'application/json' })
     });
+
+    if (!response.ok) {
+      const errText = await response.text();
+      console.error(`[approveVoucher] HTTP ${response.status}:`, errText);
+      showToast(`Approval failed (HTTP ${response.status})`, 'error');
+      return;
+    }
 
     const result = await response.json();
     if (result.success) {
@@ -1997,20 +2008,33 @@ function handleLogout() {
 
 // --- ADMIN USER MANAGEMENT CRUD ---
 async function fetchSystemUsers() {
-  const session = localStorage.getItem('tvg_session');
-  if (!session) return;
-  const user = JSON.parse(session);
-  if (user.role !== 'admin') return;
+  const session = safeGetLocalStorage('tvg_session', null);
+  if (!session) {
+    console.warn("[fetchSystemUsers] No active session found.");
+    return;
+  }
+  const userRole = (session.role || '').toLowerCase();
+  if (!userRole.includes('admin')) {
+    console.log(`[fetchSystemUsers] Role "${session.role}" is not admin. Skipping user list fetch.`);
+    return;
+  }
 
   try {
     const response = await fetch('/api/auth/users', {
-      headers: {
-        'x-user-role': user.role
-      }
+      headers: getAuthHeaders()
     });
+    if (!response.ok) {
+      const errText = await response.text();
+      console.error(`[fetchSystemUsers] HTTP Error ${response.status}:`, errText);
+      showToast(`Failed to load user accounts (HTTP ${response.status})`, 'error');
+      return;
+    }
     const result = await response.json();
     if (result.success && Array.isArray(result.users)) {
       renderSystemUsers(result.users);
+    } else {
+      console.error("[fetchSystemUsers] API returned unsuccessful result:", result);
+      showToast(result.message || 'Failed to load user accounts', 'error');
     }
   } catch (err) {
     console.error("Fetch Users Error:", err);
@@ -2025,7 +2049,7 @@ function renderSystemUsers(users) {
   if (users.length === 0) {
     tableBody.innerHTML = `
       <tr>
-        <td colspan="3" class="text-center py-6 text-slate-400">
+        <td colspan="4" class="text-center py-6 text-slate-400 font-semibold">
           No system user accounts found.
         </td>
       </tr>`;
@@ -2035,7 +2059,7 @@ function renderSystemUsers(users) {
   tableBody.innerHTML = users.map(u => {
     const parts = (u.role || '').split(':');
     const rolePart = parts[0];
-    const namePart = parts[1] || '-';
+    const namePart = parts[1] || u.fullName || '-';
 
     let badgeColor = 'bg-blue-100 text-blue-800';
     if (rolePart === 'admin') badgeColor = 'bg-amber-100 text-amber-800';
@@ -2062,11 +2086,10 @@ function renderSystemUsers(users) {
 }
 
 async function handleAddUser() {
-  const session = localStorage.getItem('tvg_session');
+  const session = safeGetLocalStorage('tvg_session', null);
   if (!session) return;
-  const user = JSON.parse(session);
-  const baseRole = (user.role || '').split(':')[0];
-  if (baseRole !== 'admin') return;
+  const userRole = (session.role || '').toLowerCase();
+  if (!userRole.includes('admin')) return;
 
   const fullNameInput = document.getElementById('newUserFullName');
   const emailInput = document.getElementById('newUserEmail');
@@ -2096,12 +2119,16 @@ async function handleAddUser() {
   try {
     const response = await fetch('/api/auth/users', {
       method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        'x-user-role': user.role
-      },
-      body: JSON.stringify({ email, password, role })
+      headers: getAuthHeaders({ 'Content-Type': 'application/json' }),
+      body: JSON.stringify({ email, password, role, fullName })
     });
+
+    if (!response.ok) {
+      const errText = await response.text();
+      console.error(`[handleAddUser] HTTP Error ${response.status}:`, errText);
+      showToast(`Failed to create user (HTTP ${response.status})`, 'error');
+      return;
+    }
 
     const result = await response.json();
     if (result.success) {
@@ -2121,11 +2148,10 @@ async function handleAddUser() {
 }
 
 async function handleDeleteUser(id) {
-  const session = localStorage.getItem('tvg_session');
+  const session = safeGetLocalStorage('tvg_session', null);
   if (!session) return;
-  const user = JSON.parse(session);
-  const baseRole = (user.role || '').split(':')[0];
-  if (baseRole !== 'admin') return;
+  const userRole = (session.role || '').toLowerCase();
+  if (!userRole.includes('admin')) return;
 
   if (!confirm('Are you sure you want to delete this user account?')) return;
 
@@ -2134,10 +2160,15 @@ async function handleDeleteUser(id) {
   try {
     const response = await fetch(`/api/auth/users/${id}`, {
       method: 'DELETE',
-      headers: {
-        'x-user-role': user.role
-      }
+      headers: getAuthHeaders()
     });
+
+    if (!response.ok) {
+      const errText = await response.text();
+      console.error(`[handleDeleteUser] HTTP Error ${response.status}:`, errText);
+      showToast(`Failed to delete user (HTTP ${response.status})`, 'error');
+      return;
+    }
 
     const result = await response.json();
     if (result.success) {

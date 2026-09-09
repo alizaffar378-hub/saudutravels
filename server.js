@@ -10,14 +10,40 @@ const app = express();
 const PORT = process.env.PORT || 3000;
 
 const SUPABASE_URL = process.env.SUPABASE_URL || 'https://ziywcvmzjrmprgxudjfs.supabase.co';
+const SUPABASE_SERVICE_ROLE_KEY = process.env.SUPABASE_SERVICE_ROLE_KEY || process.env.SUPABASE_KEY || '';
 const SUPABASE_ANON_KEY = process.env.SUPABASE_ANON_KEY || 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InppeXdjdm16anJtcHJneHVkamZzIiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODY3ODM2NTcsImV4cCI6MjEwMjM1OTY1N30.EtFm_ujkMF-rALsp0oGP9wGixEcAbbNwcsSaP6fqbYY';
 const BROWSERLESS_TOKEN = process.env.BROWSERLESS_TOKEN || '2V5IxIOFSeLWOd3c1d59eeb50984784bdbaabec25669ea6e9';
 
-const supabase = createClient(SUPABASE_URL, SUPABASE_ANON_KEY, {
+// Use service role key if available for server-side queries (bypassing RLS), otherwise use anon key
+const activeSupabaseKey = SUPABASE_SERVICE_ROLE_KEY || SUPABASE_ANON_KEY;
+
+const supabase = createClient(SUPABASE_URL, activeSupabaseKey, {
   realtime: {
     transport: WebSocket
   }
 });
+
+function getAuthInfo(req) {
+  const authHeader = req.headers['authorization'] || '';
+  let bearerToken = '';
+  if (authHeader.startsWith('Bearer ')) {
+    bearerToken = authHeader.substring(7).trim();
+  }
+  const role = req.headers['x-user-role'] || req.user?.role || (bearerToken && !bearerToken.startsWith('eyJ') ? bearerToken : '') || '';
+  const email = req.headers['x-user-email'] || req.user?.email || '';
+  return { role, email, bearerToken };
+}
+
+function isUserAdmin(role) {
+  if (!role) return false;
+  return role.toLowerCase().includes('admin');
+}
+
+function hasApprovalPermission(role) {
+  if (!role) return false;
+  const lower = role.toLowerCase();
+  return lower.includes('admin') || lower.includes('staff_approved');
+}
 
 app.use(express.json({ limit: '10mb' }));
 app.use(express.urlencoded({ extended: true, limit: '10mb' }));
@@ -121,13 +147,14 @@ app.post('/api/vouchers', async (req, res) => {
     return res.status(400).json({ success: false, message: 'Voucher ID is required' });
   }
 
-  const requesterRole = req.headers['x-user-role'] || 'staff_pending';
-  const requesterEmail = req.headers['x-user-email'] || 'unknown';
-  const hasApprovalRights = (requesterRole === 'admin' || requesterRole === 'staff_approved');
+  const { role: requesterRole, email: requesterEmail } = getAuthInfo(req);
+  const userRole = requesterRole || 'staff_pending';
+  const userEmail = requesterEmail || 'unknown';
+  const hasApprovalRights = hasApprovalPermission(userRole);
 
   let status = 'NOT APPROVED';
-  let createdBy = requesterEmail;
-  let createdByRole = requesterRole;
+  let createdBy = userEmail;
+  let createdByRole = userRole;
 
   try {
     const { data: existingVoucher } = await supabase
@@ -155,10 +182,10 @@ app.post('/api/vouchers', async (req, res) => {
     status = 'APPROVED';
   }
 
-  const isReqAdmin = (requesterRole.split(':')[0] === 'admin');
+  const isReqAdmin = isUserAdmin(userRole);
   let bookingAgentName = formData.bookingAgentName;
   if (!isReqAdmin) {
-    bookingAgentName = resolveAgentName(requesterEmail, requesterRole);
+    bookingAgentName = resolveAgentName(userEmail, userRole);
   }
 
   const updatedFormData = { 
@@ -1211,7 +1238,7 @@ app.post('/api/auth/login', async (req, res) => {
   }
 });
 
-app.get('/api/booking-agents', async (req, res) => {
+const handleGetBookingAgents = async (req, res) => {
   try {
     const { data, error } = await supabase
       .from('app_users')
@@ -1223,11 +1250,11 @@ app.get('/api/booking-agents', async (req, res) => {
     const nameMap = readJSONFile(USER_NAMES_FILE, {});
     const agents = (data || [])
       .filter(u => {
-        const r = u.role || '';
-        return r === 'admin' || r.startsWith('staff_approved');
+        const r = (u.role || '').toLowerCase();
+        return r.includes('admin') || r.includes('staff_approved');
       })
       .map(u => {
-        const parts = u.role.split(':');
+        const parts = (u.role || '').split(':');
         const fullName = parts[1] || nameMap[u.email.toLowerCase()] || u.email.split('@')[0];
         return {
           email: u.email,
@@ -1240,11 +1267,17 @@ app.get('/api/booking-agents', async (req, res) => {
     console.error("Booking Agents fetch error:", err.message);
     res.status(500).json({ success: false, message: err.message });
   }
-});
+};
 
-app.get('/api/auth/users', async (req, res) => {
-  const requesterRole = req.headers['x-user-role'] || '';
-  if (requesterRole.split(':')[0] !== 'admin') {
+app.get('/api/booking-agents', handleGetBookingAgents);
+app.get('/api/agents', handleGetBookingAgents);
+
+const handleGetUsers = async (req, res) => {
+  const { role: requesterRole, email: requesterEmail } = getAuthInfo(req);
+  console.log(`[API /api/auth/users] GET users requested by: role="${requesterRole}", email="${requesterEmail}"`);
+  
+  if (!isUserAdmin(requesterRole)) {
+    console.warn(`[API /api/auth/users] Access denied for role: "${requesterRole}"`);
     return res.status(403).json({ success: false, message: 'Access denied: Admin only' });
   }
 
@@ -1258,7 +1291,7 @@ app.get('/api/auth/users', async (req, res) => {
 
     // Merge names locally
     const nameMap = readJSONFile(USER_NAMES_FILE, {});
-    const usersWithNames = data.map(u => ({
+    const usersWithNames = (data || []).map(u => ({
       ...u,
       fullName: nameMap[u.email.toLowerCase()] || ''
     }));
@@ -1268,11 +1301,16 @@ app.get('/api/auth/users', async (req, res) => {
     console.error("Auth Get Users Error:", err.message);
     res.status(500).json({ success: false, message: err.message });
   }
-});
+};
 
-app.post('/api/auth/users', async (req, res) => {
-  const requesterRole = req.headers['x-user-role'] || '';
-  if (requesterRole.split(':')[0] !== 'admin') {
+app.get('/api/auth/users', handleGetUsers);
+app.get('/api/users', handleGetUsers);
+
+const handleCreateUser = async (req, res) => {
+  const { role: requesterRole } = getAuthInfo(req);
+  console.log(`[API /api/auth/users] POST create user requested by role: "${requesterRole}"`);
+  
+  if (!isUserAdmin(requesterRole)) {
     return res.status(403).json({ success: false, message: 'Access denied: Admin only' });
   }
 
@@ -1282,7 +1320,6 @@ app.post('/api/auth/users', async (req, res) => {
   }
 
   try {
-    // Insert into DB with clean role (satisfies database check constraints)
     const { error } = await supabase
       .from('app_users')
       .insert({
@@ -1293,7 +1330,6 @@ app.post('/api/auth/users', async (req, res) => {
 
     if (error) throw error;
 
-    // Save name mapping locally
     if (fullName) {
       const nameMap = readJSONFile(USER_NAMES_FILE, {});
       nameMap[email.trim().toLowerCase()] = fullName.trim();
@@ -1305,17 +1341,21 @@ app.post('/api/auth/users', async (req, res) => {
     console.error("Auth Create User Error:", err.message);
     res.status(500).json({ success: false, message: err.message });
   }
-});
+};
 
-app.delete('/api/auth/users/:id', async (req, res) => {
-  const requesterRole = req.headers['x-user-role'] || '';
-  if (requesterRole.split(':')[0] !== 'admin') {
+app.post('/api/auth/users', handleCreateUser);
+app.post('/api/users', handleCreateUser);
+
+const handleDeleteUser = async (req, res) => {
+  const { role: requesterRole } = getAuthInfo(req);
+  console.log(`[API /api/auth/users] DELETE user requested by role: "${requesterRole}"`);
+  
+  if (!isUserAdmin(requesterRole)) {
     return res.status(403).json({ success: false, message: 'Access denied: Admin only' });
   }
 
   const { id } = req.params;
   try {
-    // Fetch email first to clean up local mapping
     const { data: targetUser } = await supabase
       .from('app_users')
       .select('email')
@@ -1340,14 +1380,17 @@ app.delete('/api/auth/users/:id', async (req, res) => {
     console.error("Auth Delete User Error:", err.message);
     res.status(500).json({ success: false, message: err.message });
   }
-});
+};
+
+app.delete('/api/auth/users/:id', handleDeleteUser);
+app.delete('/api/users/:id', handleDeleteUser);
 
 // 11. POST Approve Voucher
 app.post('/api/vouchers/:id/approve', async (req, res) => {
   const { id } = req.params;
-  const requesterRole = req.headers['x-user-role'] || '';
+  const { role: requesterRole } = getAuthInfo(req);
 
-  if (requesterRole !== 'admin' && requesterRole !== 'staff_approved') {
+  if (!hasApprovalPermission(requesterRole)) {
     return res.status(403).json({ success: false, message: 'Access denied: Authorization required' });
   }
 
