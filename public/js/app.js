@@ -98,18 +98,18 @@ document.addEventListener('DOMContentLoaded', async () => {
       depTimePicker = flatpickr("#depTime", {
         enableTime: true,
         noCalendar: true,
-        dateFormat: "H:i",
-        time_24hr: true,
-        defaultDate: "04:30",
+        dateFormat: "h:i K",
+        time_24hr: false,
+        defaultDate: "04:30 AM",
         allowInput: true
       });
 
       depArrivalTimePicker = flatpickr("#depArrivalTime", {
         enableTime: true,
         noCalendar: true,
-        dateFormat: "H:i",
-        time_24hr: true,
-        defaultDate: "07:30",
+        dateFormat: "h:i K",
+        time_24hr: false,
+        defaultDate: "07:30 AM",
         allowInput: true
       });
 
@@ -128,18 +128,18 @@ document.addEventListener('DOMContentLoaded', async () => {
       retTimePicker = flatpickr("#retTime", {
         enableTime: true,
         noCalendar: true,
-        dateFormat: "H:i",
-        time_24hr: true,
-        defaultDate: "18:15",
+        dateFormat: "h:i K",
+        time_24hr: false,
+        defaultDate: "06:15 PM",
         allowInput: true
       });
 
       retArrivalTimePicker = flatpickr("#retArrivalTime", {
         enableTime: true,
         noCalendar: true,
-        dateFormat: "H:i",
-        time_24hr: true,
-        defaultDate: "21:15",
+        dateFormat: "h:i K",
+        time_24hr: false,
+        defaultDate: "09:15 PM",
         allowInput: true
       });
 
@@ -317,21 +317,6 @@ function handlePackageNameChange() {
     customInput.classList.add('hidden');
   }
 }
-window.handlePackageNameChange = handlePackageNameChange;
-
-// --- VEHICLE TYPE CUSTOM INPUT ---
-function handleVehicleTypeChange() {
-  const select = document.getElementById('vehicleType');
-  const customInput = document.getElementById('vehicleTypeCustom');
-  if (!select || !customInput) return;
-  if (select.value === 'CUSTOM') {
-    customInput.classList.remove('hidden');
-    customInput.focus();
-  } else {
-    customInput.classList.add('hidden');
-  }
-}
-window.handleVehicleTypeChange = handleVehicleTypeChange;
 
 // --- TOGGLE VISA/MOFA FIELDS ---
 function toggleMofaFields() {
@@ -616,11 +601,6 @@ function fillSampleData(e) {
     else document.getElementById('transportDate').value = '2026-08-16';
     document.getElementById('transporterName').value = 'Al-Saptco Transport Co.';
     document.getElementById('vehicleType').value = 'Private GMC / Yukon (4x4)';
-    const vTypeCustomSample = document.getElementById('vehicleTypeCustom');
-    if (vTypeCustomSample) {
-      vTypeCustomSample.value = '';
-      vTypeCustomSample.classList.add('hidden');
-    }
     if (document.getElementById('transportRouteNo')) document.getElementById('transportRouteNo').value = 'TRP-VOUCHER-9042';
     document.getElementById('transportRoute').value = 'Jeddah Apt -> Makkah Hotel -> Madinah Hotel -> Medina Apt';
 
@@ -629,20 +609,20 @@ function fillSampleData(e) {
     document.getElementById('depFlightNo').value = 'SV-739';
     if (depDatePicker) depDatePicker.setDate('2026-08-16');
     else document.getElementById('depDate').value = '2026-08-16';
-    if (depTimePicker) depTimePicker.setDate('04:30');
-    else document.getElementById('depTime').value = '04:30';
-    if (depArrivalTimePicker) depArrivalTimePicker.setDate('07:30');
-    else document.getElementById('depArrivalTime').value = '07:30';
+    if (depTimePicker) depTimePicker.setDate('04:30 AM');
+    else document.getElementById('depTime').value = '04:30 AM';
+    if (depArrivalTimePicker) depArrivalTimePicker.setDate('07:30 AM');
+    else document.getElementById('depArrivalTime').value = '07:30 AM';
     document.getElementById('depRoute').value = 'LHE -> JED';
 
     document.getElementById('retAirline').value = 'Saudi Arabian Airlines (SV)';
     document.getElementById('retFlightNo').value = 'SV-738';
     if (retDatePicker) retDatePicker.setDate('2026-08-30');
     else document.getElementById('retDate').value = '2026-08-30';
-    if (retTimePicker) retTimePicker.setDate('18:15');
-    else document.getElementById('retTime').value = '18:15';
-    if (retArrivalTimePicker) retArrivalTimePicker.setDate('21:15');
-    else document.getElementById('retArrivalTime').value = '21:15';
+    if (retTimePicker) retTimePicker.setDate('06:15 PM');
+    else document.getElementById('retTime').value = '06:15 PM';
+    if (retArrivalTimePicker) retArrivalTimePicker.setDate('09:15 PM');
+    else document.getElementById('retArrivalTime').value = '09:15 PM';
     document.getElementById('retRoute').value = 'MED -> LHE';
 
     // Helplines sample
@@ -697,17 +677,11 @@ function resetVoucherForm(e) {
     }
 
     if (depDatePicker) depDatePicker.setDate('2026-08-16');
-    if (depTimePicker) depTimePicker.setDate('04:30');
-    if (depArrivalTimePicker) depArrivalTimePicker.setDate('07:30');
+    if (depTimePicker) depTimePicker.setDate('04:30 AM');
+    if (depArrivalTimePicker) depArrivalTimePicker.setDate('07:30 AM');
     if (retDatePicker) retDatePicker.setDate('2026-08-30');
-    if (retTimePicker) retTimePicker.setDate('18:15');
-    if (retArrivalTimePicker) retArrivalTimePicker.setDate('21:15');
-
-    const vTypeCustomReset = document.getElementById('vehicleTypeCustom');
-    if (vTypeCustomReset) {
-      vTypeCustomReset.value = '';
-      vTypeCustomReset.classList.add('hidden');
-    }
+    if (retTimePicker) retTimePicker.setDate('06:15 PM');
+    if (retArrivalTimePicker) retArrivalTimePicker.setDate('09:15 PM');
 
     const ziyaratToggle = document.getElementById('includeZiyaratToggle');
     if (ziyaratToggle) {
@@ -814,14 +788,10 @@ function getVoucherFormData() {
   });
 
   // Transport
-  const vehicleSelect = getVal('vehicleType', '');
-  const vehicleCustom = getVal('vehicleTypeCustom', '');
-  const vehicleTypeValue = vehicleSelect === 'CUSTOM' ? (vehicleCustom || 'Custom Vehicle') : vehicleSelect;
-
   const transport = {
     date: transportDatePicker ? transportDatePicker.input.value : getVal('transportDate', ''),
     transporter: getVal('transporterName', ''),
-    vehicleType: vehicleTypeValue,
+    vehicleType: getVal('vehicleType', ''),
     routeNo: getVal('transportRouteNo', ''),
     route: getVal('transportRoute', '')
   };
@@ -1439,31 +1409,7 @@ function loadVoucherToForm(id) {
     if (transportDatePicker && v.transport.date) transportDatePicker.setDate(v.transport.date);
     else if (v.transport.date) document.getElementById('transportDate').value = v.transport.date;
     if (v.transport.transporter) document.getElementById('transporterName').value = v.transport.transporter;
-    if (v.transport.vehicleType) {
-      const vSelect = document.getElementById('vehicleType');
-      const vCustom = document.getElementById('vehicleTypeCustom');
-      const standardVehicles = [
-        "Private GMC / Yukon (4x4)",
-        "Coaster Luxury Bus (25 Seater)",
-        "Full VIP Bus (49 Seater)",
-        "Hyundai H1 / HiAce Minivan",
-        "Private Sedan Car (Camry/Sonata)",
-        "Haramain High-Speed Train"
-      ];
-      if (standardVehicles.includes(v.transport.vehicleType)) {
-        if (vSelect) vSelect.value = v.transport.vehicleType;
-        if (vCustom) {
-          vCustom.value = '';
-          vCustom.classList.add('hidden');
-        }
-      } else {
-        if (vSelect) vSelect.value = 'CUSTOM';
-        if (vCustom) {
-          vCustom.value = v.transport.vehicleType;
-          vCustom.classList.remove('hidden');
-        }
-      }
-    }
+    if (v.transport.vehicleType) document.getElementById('vehicleType').value = v.transport.vehicleType;
     if (v.transport.routeNo && document.getElementById('transportRouteNo')) document.getElementById('transportRouteNo').value = v.transport.routeNo;
     if (v.transport.route) document.getElementById('transportRoute').value = v.transport.route;
   }
