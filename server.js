@@ -97,22 +97,26 @@ const resolveAgentName = (email, role) => {
 // --- API ENDPOINTS ---
 
 // 1. GET Settings
-app.get('/api/settings', (req, res) => {
+const handleGetSettings = (req, res) => {
   const settings = readJSONFile(SETTINGS_FILE, {});
   res.json({ success: true, settings });
-});
+};
+app.get('/api/settings', handleGetSettings);
+app.get('/settings', handleGetSettings);
 
 // 2. POST Settings
-app.post('/api/settings', (req, res) => {
+const handlePostSettings = (req, res) => {
   const newSettings = req.body;
   const currentSettings = readJSONFile(SETTINGS_FILE, {});
   const updatedSettings = { ...currentSettings, ...newSettings };
   writeJSONFile(SETTINGS_FILE, updatedSettings);
   res.json({ success: true, settings: updatedSettings });
-});
+};
+app.post('/api/settings', handlePostSettings);
+app.post('/settings', handlePostSettings);
 
 // 3. GET Vouchers
-app.get('/api/vouchers', async (req, res) => {
+const handleGetVouchers = async (req, res) => {
   try {
     const { data, error } = await supabase
       .from('vouchers')
@@ -138,10 +142,12 @@ app.get('/api/vouchers', async (req, res) => {
     console.error("Supabase GET Error:", err.message);
     res.status(500).json({ success: false, message: err.message });
   }
-});
+};
+app.get('/api/vouchers', handleGetVouchers);
+app.get('/vouchers', handleGetVouchers);
 
 // 4. POST Voucher (Create or Update)
-app.post('/api/vouchers', async (req, res) => {
+const handlePostVouchers = async (req, res) => {
   const formData = req.body;
   if (!formData.id) {
     return res.status(400).json({ success: false, message: 'Voucher ID is required' });
@@ -232,10 +238,12 @@ app.post('/api/vouchers', async (req, res) => {
     console.error("Supabase POST Error:", err.message);
     res.status(500).json({ success: false, message: err.message });
   }
-});
+};
+app.post('/api/vouchers', handlePostVouchers);
+app.post('/vouchers', handlePostVouchers);
 
 // 5. DELETE Voucher
-app.delete('/api/vouchers/:id', async (req, res) => {
+const handleDeleteVoucher = async (req, res) => {
   const { id } = req.params;
   try {
     const { error } = await supabase
@@ -250,10 +258,12 @@ app.delete('/api/vouchers/:id', async (req, res) => {
     console.error("Supabase DELETE Error:", err.message);
     res.status(500).json({ success: false, message: err.message });
   }
-});
+};
+app.delete('/api/vouchers/:id', handleDeleteVoucher);
+app.delete('/vouchers/:id', handleDeleteVoucher);
 
 // 6. POST Generate QR Code (Base64)
-app.post('/api/generate-qr', async (req, res) => {
+const handleGenerateQR = async (req, res) => {
   try {
     const { text } = req.body;
     const qrDataUrl = await QRCode.toDataURL(text || 'VALIDATED-TRAVEL-VOUCHER', {
@@ -266,7 +276,9 @@ app.post('/api/generate-qr', async (req, res) => {
   } catch (err) {
     res.status(500).json({ success: false, message: err.message });
   }
-});
+};
+app.post('/api/generate-qr', handleGenerateQR);
+app.post('/generate-qr', handleGenerateQR);
 
 // 7. GET Puppeteer / PDF Configuration
 const PUPPETEER_PDF_OPTIONS = {
@@ -1200,7 +1212,7 @@ app.post('/api/generate-pdf', async (req, res) => {
 });
 
 // 10. AUTHENTICATION & ACCESS CONTROL API
-app.post('/api/auth/login', async (req, res) => {
+const handleLogin = async (req, res) => {
   const { email, password } = req.body;
   if (!email || !password) {
     return res.status(400).json({ success: false, message: 'Email and password are required' });
@@ -1236,7 +1248,9 @@ app.post('/api/auth/login', async (req, res) => {
     console.error("Auth Login Error:", err.message);
     res.status(500).json({ success: false, message: err.message });
   }
-});
+};
+app.post('/api/auth/login', handleLogin);
+app.post('/auth/login', handleLogin);
 
 const handleGetBookingAgents = async (req, res) => {
   try {
@@ -1541,13 +1555,20 @@ app.get('/dashboard', (req, res) => {
 
 // Catch-all route serving frontend index.html
 app.get('*', (req, res) => {
+  if (req.path.startsWith('/api') || req.path === '/api') {
+    return res.status(404).json({ success: false, message: `API route not found: ${req.path}` });
+  }
   res.sendFile(path.join(__dirname, 'public', 'index.html'));
 });
 
-// Start Server
-app.listen(PORT, () => {
-  console.log(`=======================================================`);
-  console.log(` TRAVEL VOUCHER GENERATOR SERVER RUNNING ON PORT ${PORT} `);
-  console.log(` Web App URL: http://localhost:${PORT} `);
-  console.log(`======================================================= `);
-});
+// Start Server when executed directly
+if (require.main === module || !process.env.VERCEL) {
+  app.listen(PORT, () => {
+    console.log(`=======================================================`);
+    console.log(` TRAVEL VOUCHER GENERATOR SERVER RUNNING ON PORT ${PORT} `);
+    console.log(` Web App URL: http://localhost:${PORT} `);
+    console.log(`======================================================= `);
+  });
+}
+
+module.exports = app;
