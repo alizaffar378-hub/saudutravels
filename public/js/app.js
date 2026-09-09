@@ -967,14 +967,31 @@ async function downloadPreviewPDF(e) {
   try {
     // Create a temporary off-screen container for rendering
     const tempContainer = document.createElement('div');
-    tempContainer.style.position = 'absolute';
-    tempContainer.style.left = '-9999px';
-    tempContainer.style.top = '-9999px';
-    tempContainer.style.width = '794px'; // standard A4 width representation
+    tempContainer.style.position = 'fixed';
+    tempContainer.style.top = '0';
+    tempContainer.style.left = '0';
+    tempContainer.style.width = '794px';
+    tempContainer.style.zIndex = '-9999';
+    tempContainer.style.opacity = '1';
+    tempContainer.style.pointerEvents = 'none';
+    tempContainer.style.background = '#ffffff';
     document.body.appendChild(tempContainer);
 
     const renderedHtml = await renderA4VoucherHTML(formData, currentAgencySettings);
     tempContainer.innerHTML = renderedHtml;
+
+    // Ensure fonts and images are fully loaded
+    if (document.fonts && document.fonts.ready) {
+      await document.fonts.ready;
+    }
+    const imgElements = tempContainer.querySelectorAll('img');
+    await Promise.all(Array.from(imgElements).map(img => {
+      if (img.complete) return Promise.resolve();
+      return new Promise(resolve => {
+        img.onload = resolve;
+        img.onerror = resolve;
+      });
+    }));
 
     // Pass the actual rendered layout element to html2pdf
     const elementToPrint = tempContainer.firstElementChild || tempContainer;
@@ -983,7 +1000,7 @@ async function downloadPreviewPDF(e) {
       margin:       0,
       filename:     filename,
       image:        { type: 'jpeg', quality: 0.98 },
-      html2canvas:  { scale: 2, useCORS: true, logging: false },
+      html2canvas:  { scale: 2, useCORS: true, logging: false, scrollY: 0, scrollX: 0 },
       jsPDF:        { unit: 'mm', format: 'a4', orientation: 'portrait' }
     };
 

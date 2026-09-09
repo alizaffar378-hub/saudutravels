@@ -9,7 +9,11 @@ const WebSocket = require('ws');
 const app = express();
 const PORT = process.env.PORT || 3000;
 
-const supabase = createClient(process.env.SUPABASE_URL, process.env.SUPABASE_ANON_KEY, {
+const SUPABASE_URL = process.env.SUPABASE_URL || 'https://ziywcvmzjrmprgxudjfs.supabase.co';
+const SUPABASE_ANON_KEY = process.env.SUPABASE_ANON_KEY || 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InppeXdjdm16anJtcHJneHVkamZzIiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODY3ODM2NTcsImV4cCI6MjEwMjM1OTY1N30.EtFm_ujkMF-rALsp0oGP9wGixEcAbbNwcsSaP6fqbYY';
+const BROWSERLESS_TOKEN = process.env.BROWSERLESS_TOKEN || '2V5IxIOFSeLWOd3c1d59eeb50984784bdbaabec25669ea6e9';
+
+const supabase = createClient(SUPABASE_URL, SUPABASE_ANON_KEY, {
   realtime: {
     transport: WebSocket
   }
@@ -1093,11 +1097,11 @@ app.post('/api/generate-pdf', async (req, res) => {
     const htmlContent = buildSelfContainedPdfHtml(formData, agencySettings, qrDataUrl, baseUrl);
 
     if (isProduction) {
-      if (!process.env.BROWSERLESS_TOKEN) {
+      if (!BROWSERLESS_TOKEN) {
         throw new Error("BROWSERLESS_TOKEN environment variable is not set");
       }
       browser = await core.connect({
-        browserWSEndpoint: `wss://chrome.browserless.io?token=${process.env.BROWSERLESS_TOKEN}`
+        browserWSEndpoint: `wss://chrome.browserless.io?token=${BROWSERLESS_TOKEN}`
       });
     } else {
       if (localPuppeteer) {
