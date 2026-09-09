@@ -1244,7 +1244,7 @@ app.get('/api/booking-agents', async (req, res) => {
 
 app.get('/api/auth/users', async (req, res) => {
   const requesterRole = req.headers['x-user-role'] || '';
-  if (requesterRole !== 'admin') {
+  if (requesterRole.split(':')[0] !== 'admin') {
     return res.status(403).json({ success: false, message: 'Access denied: Admin only' });
   }
 
@@ -1272,7 +1272,7 @@ app.get('/api/auth/users', async (req, res) => {
 
 app.post('/api/auth/users', async (req, res) => {
   const requesterRole = req.headers['x-user-role'] || '';
-  if (requesterRole !== 'admin') {
+  if (requesterRole.split(':')[0] !== 'admin') {
     return res.status(403).json({ success: false, message: 'Access denied: Admin only' });
   }
 
@@ -1309,7 +1309,7 @@ app.post('/api/auth/users', async (req, res) => {
 
 app.delete('/api/auth/users/:id', async (req, res) => {
   const requesterRole = req.headers['x-user-role'] || '';
-  if (requesterRole !== 'admin') {
+  if (requesterRole.split(':')[0] !== 'admin') {
     return res.status(403).json({ success: false, message: 'Access denied: Admin only' });
   }
 
