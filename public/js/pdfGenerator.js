@@ -165,8 +165,7 @@ async function renderA4VoucherHTML(data, agencySettings) {
   const baseUrl = (typeof window !== 'undefined' && window.location && window.location.origin)
     || (typeof process !== 'undefined' && process.env && process.env.PUBLIC_APP_URL)
     || 'https://saudipak.vercel.app';
-  const encodedData = encodeVoucherData(data);
-  const verifyUrl = `${baseUrl}/verify?voucher=${voucher_ref}${encodedData ? '&d=' + encodedData : ''}`;
+  const verifyUrl = `${baseUrl}/verify?voucher=${voucher_ref}`;
   const qrDataUrl = await generateQRCodeDataUrl(verifyUrl);
 
   // Agency logo HTML

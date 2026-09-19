@@ -1265,13 +1265,12 @@ app.post('/api/generate-pdf', async (req, res) => {
         const protocol = req.headers['x-forwarded-proto'] || req.protocol || 'http';
         const host = req.headers.host;
         const baseUrl = process.env.PUBLIC_APP_URL || `${protocol}://${host}`;
-        const encodedVoucher = encodeVoucherData(formData);
-        const verifyUrl = `${baseUrl}/verify?voucher=${voucher_ref}${encodedVoucher ? '&d=' + encodedVoucher : ''}`;
+        const verifyUrl = `${baseUrl}/verify?voucher=${voucher_ref}`;
 
         qrDataUrl = await QRCode.toDataURL(verifyUrl, {
           errorCorrectionLevel: 'M',
-          margin: 2,
-          width: 150,
+          margin: 1,
+          width: 180,
           color: { dark: '#047857', light: '#ffffff' }
         });
       }
@@ -1728,12 +1727,11 @@ app.get('/verify', async (req, res) => {
 
       let qrDataUrl = '';
       try {
-        const dCode = encodedData || encodeVoucherData(formData);
-        const verifyUrl = `${baseUrl}/verify?voucher=${voucherRef}${dCode ? '&d=' + dCode : ''}`;
+        const verifyUrl = `${baseUrl}/verify?voucher=${voucherRef}`;
         qrDataUrl = await QRCode.toDataURL(verifyUrl, {
           errorCorrectionLevel: 'M',
-          margin: 2,
-          width: 150,
+          margin: 1,
+          width: 180,
           color: { dark: '#047857', light: '#ffffff' }
         });
       } catch (qrErr) {
