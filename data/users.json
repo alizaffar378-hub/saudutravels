@@ -1,0 +1,26 @@
+[
+  {
+    "id": "1",
+    "email": "admin@saudipak.com",
+    "password": "admin",
+    "role": "admin",
+    "fullName": "Admin User",
+    "created_at": "2026-08-15T10:00:00.000Z"
+  },
+  {
+    "id": "2",
+    "email": "alizaffar378@gmail.com",
+    "password": "ali123",
+    "role": "admin:Ali Zaffar",
+    "fullName": "Ali Zaffar",
+    "created_at": "2026-08-15T10:00:00.000Z"
+  },
+  {
+    "id": "3",
+    "email": "alizaffar123@gmail.com",
+    "password": "ali123",
+    "role": "staff_approved:Ali zaffar",
+    "fullName": "Ali zaffar",
+    "created_at": "2026-08-15T10:00:00.000Z"
+  }
+]
