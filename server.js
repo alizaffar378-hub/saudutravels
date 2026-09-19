@@ -3,8 +3,152 @@ const express = require('express');
 const path = require('path');
 const fs = require('fs');
 const QRCode = require('qrcode');
+const zlib = require('zlib');
 const { createClient } = require('@supabase/supabase-js');
 const WebSocket = require('ws');
+
+function cleanCompactObj(obj) {
+  if (Array.isArray(obj)) {
+    return obj.map(cleanCompactObj).filter(x => x !== null && x !== undefined && (typeof x !== 'object' || Object.keys(x).length > 0));
+  } else if (typeof obj === 'object' && obj !== null) {
+    const res = {};
+    for (const [k, val] of Object.entries(obj)) {
+      if (val !== '' && val !== null && val !== undefined && val !== false && !(Array.isArray(val) && val.length === 0)) {
+        res[k] = cleanCompactObj(val);
+      }
+    }
+    return res;
+  }
+  return obj;
+}
+
+function encodeVoucherData(data) {
+  if (!data) return '';
+  try {
+    const compact = {
+      id: data.id || data.voucherRef,
+      vD: data.voucherDate,
+      pN: data.packageName,
+      fH: data.familyHead,
+      pax: data.totalPax || (Array.isArray(data.passengers) ? data.passengers.length : 1),
+      ad: data.adultsCount || 0,
+      ch: data.childrenCount || 0,
+      inf: data.infantsCount || 0,
+      p: (Array.isArray(data.passengers) ? data.passengers : []).map(p => cleanCompactObj({
+        s: p.sno, n: p.name, pp: p.passportNo, g: p.gender, t: p.type, v: p.visaNo, m: p.mofaNo, gr: p.groupNo, pnr: p.pnr
+      })),
+      h: (Array.isArray(data.hotels) ? data.hotels : []).map(h => cleanCompactObj({
+        c: h.city, hn: h.hotelName, rt: h.roomType, mp: h.mealPlan, ci: h.checkIn, co: h.checkOut, n: h.totalNights
+      })),
+      fl: cleanCompactObj(data.flight ? {
+        da: data.flight.departureAirline, df: data.flight.departureFlightNo, dd: data.flight.departureDate, dr: data.flight.departureRoute, dt: data.flight.departureTime, dat: data.flight.departureArrivalTime,
+        ra: data.flight.returnAirline, rf: data.flight.returnFlightNo, rd: data.flight.returnDate, rr: data.flight.returnRoute, rt: data.flight.returnTime, rat: data.flight.returnArrivalTime
+      } : null),
+      tr: cleanCompactObj(data.transport ? {
+        d: data.transport.date, tp: data.transport.transporter, v: data.transport.vehicleType, r: data.transport.route, rn: data.transport.routeNo
+      } : null),
+      zy: cleanCompactObj(Array.isArray(data.ziyarat) ? data.ziyarat.map(z => ({ c: z.city, z: z.ziyarat, d: z.date })) : null),
+      st: data.status || 'APPROVED',
+      by: data.createdBy || data.agentName,
+      an: data.agentName || data.bookingAgentName
+    };
+    
+    const cleaned = cleanCompactObj(compact);
+    const json = JSON.stringify(cleaned);
+    const deflated = zlib.deflateRawSync(Buffer.from(json, 'utf8'));
+    return deflated.toString('base64url');
+  } catch (err) {
+    console.warn("encodeVoucherData error:", err.message);
+    return '';
+  }
+}
+
+function decodeVoucherData(encoded) {
+  if (!encoded) return null;
+  try {
+    let json = '';
+    const clean = decodeURIComponent(encoded).trim();
+    try {
+      const buf = Buffer.from(clean, clean.includes('+') || clean.includes('/') ? 'base64' : 'base64url');
+      json = zlib.inflateRawSync(buf).toString('utf8');
+    } catch(e) {
+      try {
+        json = Buffer.from(clean, 'base64').toString('utf8');
+      } catch(e2) {
+        json = clean;
+      }
+    }
+    const c = JSON.parse(json);
+    return {
+      id: c.id,
+      voucherRef: c.id,
+      voucherDate: c.vD || c.voucherDate,
+      packageName: c.pN || c.packageName,
+      familyHead: c.fH || c.familyHead,
+      totalPax: c.pax || c.totalPax,
+      adultsCount: c.ad || c.adultsCount || 0,
+      childrenCount: c.ch || c.childrenCount || 0,
+      infantsCount: c.inf || c.infantsCount || 0,
+      passengers: (Array.isArray(c.p) ? c.p : (Array.isArray(c.passengers) ? c.passengers : [])).map((p, i) => ({
+        sno: p.s || p.sno || (i + 1),
+        name: p.n || p.name || '',
+        passportNo: p.pp || p.passportNo || '',
+        gender: p.g || p.gender || '',
+        type: p.t || p.type || '',
+        visaNo: p.v || p.visaNo || '',
+        mofaNo: p.m || p.mofaNo || '',
+        groupNo: p.gr || p.groupNo || '',
+        pnr: p.pnr || ''
+      })),
+      hotels: (Array.isArray(c.h) ? c.h : (Array.isArray(c.hotels) ? c.hotels : [])).map(h => ({
+        city: h.c || h.city || '',
+        hotelName: h.hn || h.hotelName || '',
+        roomType: h.rt || h.roomType || '',
+        mealPlan: h.mp || h.mealPlan || '',
+        checkIn: h.ci || h.checkIn || '',
+        checkOut: h.co || h.checkOut || '',
+        totalNights: h.n || h.totalNights || 0
+      })),
+      flight: c.fl || c.flight ? {
+        departureAirline: (c.fl && c.fl.da) || (c.flight && c.flight.departureAirline) || '',
+        departureFlightNo: (c.fl && c.fl.df) || (c.flight && c.flight.departureFlightNo) || '',
+        departureDate: (c.fl && c.fl.dd) || (c.flight && c.flight.departureDate) || '',
+        departureRoute: (c.fl && c.fl.dr) || (c.flight && c.flight.departureRoute) || '',
+        departureTime: (c.fl && c.fl.dt) || (c.flight && c.flight.departureTime) || '',
+        departureArrivalTime: (c.fl && c.fl.dat) || (c.flight && c.flight.departureArrivalTime) || '',
+        returnAirline: (c.fl && c.fl.ra) || (c.flight && c.flight.returnAirline) || '',
+        returnFlightNo: (c.fl && c.fl.rf) || (c.flight && c.flight.returnFlightNo) || '',
+        returnDate: (c.fl && c.fl.rd) || (c.flight && c.flight.returnDate) || '',
+        returnRoute: (c.fl && c.fl.rr) || (c.flight && c.flight.returnRoute) || '',
+        returnTime: (c.fl && c.fl.rt) || (c.flight && c.flight.returnTime) || '',
+        returnArrivalTime: (c.fl && c.fl.rat) || (c.flight && c.flight.returnArrivalTime) || ''
+      } : {},
+      transport: c.tr || c.transport ? {
+        date: (c.tr && c.tr.d) || (c.transport && c.transport.date) || '',
+        transporter: (c.tr && c.tr.tp) || (c.transport && c.transport.transporter) || '',
+        vehicleType: (c.tr && c.tr.v) || (c.transport && c.transport.vehicleType) || '',
+        route: (c.tr && c.tr.r) || (c.transport && c.transport.route) || '',
+        routeNo: (c.tr && c.tr.rn) || (c.transport && c.transport.routeNo) || ''
+      } : {},
+      ziyarat: Array.isArray(c.zy) ? c.zy.map(z => ({ city: z.c, ziyarat: z.z, date: z.d })) : (Array.isArray(c.ziyarat) ? c.ziyarat : []),
+      helplines: c.hl || c.helplines || {
+        makkah: '+966 54 111 2233',
+        medina: '+966 54 444 5566',
+        transport: '+966 56 777 8899'
+      },
+      termsUrdu: c.tU || c.termsUrdu || '',
+      termsEnglish: c.tE || c.termsEnglish || '',
+      status: c.st || c.status || 'APPROVED',
+      createdBy: c.by || c.createdBy || 'admin@saudipak.com',
+      createdByRole: c.r || c.createdByRole || 'admin',
+      agentName: c.an || c.agentName || 'Admin',
+      bookingAgentName: c.an || c.bookingAgentName || ''
+    };
+  } catch(e) {
+    console.error("Voucher decoding failed:", e.message);
+    return null;
+  }
+}
 
 const app = express();
 const PORT = process.env.PORT || 3000;
@@ -1121,7 +1265,8 @@ app.post('/api/generate-pdf', async (req, res) => {
         const protocol = req.headers['x-forwarded-proto'] || req.protocol || 'http';
         const host = req.headers.host;
         const baseUrl = process.env.PUBLIC_APP_URL || `${protocol}://${host}`;
-        const verifyUrl = `${baseUrl}/verify?voucher=${voucher_ref}`;
+        const encodedVoucher = encodeVoucherData(formData);
+        const verifyUrl = `${baseUrl}/verify?voucher=${voucher_ref}${encodedVoucher ? '&d=' + encodedVoucher : ''}`;
 
         qrDataUrl = await QRCode.toDataURL(verifyUrl, {
           errorCorrectionLevel: 'M',
@@ -1497,8 +1642,114 @@ app.post('/vouchers/:id/approve', handleApproveVoucher);
 
 // 12. Public Voucher Verification Route
 app.get('/verify', async (req, res) => {
-  const voucherId = req.query.voucher;
-  if (!voucherId) {
+  const voucherId = (req.query.voucher || req.query.id || req.query.v || '').toString().trim();
+  const encodedData = req.query.d || req.query.data || '';
+
+  let formData = null;
+
+  // Layer 1: Instant Self-Contained Encoded QR Payload
+  if (encodedData) {
+    formData = decodeVoucherData(encodedData);
+    if (formData) {
+      formData.status = formData.status || 'APPROVED';
+      // Cache in local JSON store
+      try {
+        let localVouchers = readJSONFile(VOUCHERS_FILE, []);
+        const exists = localVouchers.some(v => v.id === formData.id);
+        if (!exists && formData.id) {
+          localVouchers.unshift(formData);
+          writeJSONFile(VOUCHERS_FILE, localVouchers);
+        }
+      } catch (_) {}
+    }
+  }
+
+  // Layer 2: Supabase Database Lookup
+  if (!formData && voucherId) {
+    try {
+      const { data: voucher, error } = await supabase
+        .from('vouchers')
+        .select('*')
+        .or(`id.eq.${voucherId},voucher_ref.eq.${voucherId}`)
+        .maybeSingle();
+
+      if (!error && voucher) {
+        formData = voucher.form_data || voucher;
+        formData.status = voucher.status || formData.status || 'APPROVED';
+        formData.id = voucher.id || formData.id;
+        formData.voucherRef = voucher.voucher_ref || voucher.id || formData.voucherRef;
+      }
+    } catch (err) {
+      console.warn("Supabase lookup in /verify route skipped/failed:", err.message);
+    }
+  }
+
+  // Layer 3: Local JSON Store Lookup
+  if (!formData && voucherId) {
+    try {
+      const localVouchers = readJSONFile(VOUCHERS_FILE, []);
+      const cleanId = voucherId.toLowerCase();
+      const found = localVouchers.find(v => {
+        const vId = (v.id || '').toString().trim().toLowerCase();
+        const vRef = (v.voucherRef || v.voucher_ref || '').toString().trim().toLowerCase();
+        return vId === cleanId || vRef === cleanId || cleanId.includes(vId) || (vId && cleanId.endsWith(vId));
+      });
+
+      if (found) {
+        formData = found.form_data || found;
+        formData.status = found.status || formData.status || 'APPROVED';
+      }
+    } catch (err) {
+      console.warn("Local JSON lookup in /verify failed:", err.message);
+    }
+  }
+
+  // If voucher data is found, render the official full voucher view
+  if (formData) {
+    try {
+      const voucherRef = formData.voucherRef || formData.id || voucherId;
+
+      // Load agency settings
+      const savedSettings = readJSONFile(SETTINGS_FILE, {});
+      const agencySettings = savedSettings && savedSettings.agencyName ? savedSettings : {
+        agencyName: 'SAUDI PAK GROUP OF TRAVELS',
+        tagline: 'Hajj & Umrah Pilgrimage',
+        phone1: '03169666666',
+        phone2: '+966 50 9876543',
+        email: 'saudipakavi@gmail.com',
+        website: 'www.saudipak.com.pk',
+        address: 'Suite # 6-7, Hajvari Arcade, Kutchery Road, Multan',
+        licenseNo: 'DTS-4492'
+      };
+
+      const protocol = req.headers['x-forwarded-proto'] || req.protocol || 'http';
+      const host = req.headers.host;
+      const baseUrl = process.env.PUBLIC_APP_URL || `${protocol}://${host}`;
+
+      let qrDataUrl = '';
+      try {
+        const dCode = encodedData || encodeVoucherData(formData);
+        const verifyUrl = `${baseUrl}/verify?voucher=${voucherRef}${dCode ? '&d=' + dCode : ''}`;
+        qrDataUrl = await QRCode.toDataURL(verifyUrl, {
+          errorCorrectionLevel: 'M',
+          margin: 2,
+          width: 150,
+          color: { dark: '#047857', light: '#ffffff' }
+        });
+      } catch (qrErr) {
+        console.error("QR Code generation in verify route failed:", qrErr);
+      }
+
+      const fullHtml = buildSelfContainedPdfHtml(formData, agencySettings, qrDataUrl, baseUrl, true);
+      return res.send(fullHtml);
+    } catch (renderErr) {
+      console.error("Verification Render Error:", renderErr.message);
+      return res.status(500).send("Verification rendering failed.");
+    }
+  }
+
+  // If no parameter at all was provided
+  if (!voucherId && !encodedData) {
     return res.status(400).send(`
       <!DOCTYPE html>
       <html lang="en">
@@ -1516,90 +1767,81 @@ app.get('/verify', async (req, res) => {
           </div>
           <h1 class="text-lg font-black text-slate-800 uppercase tracking-wide">Invalid Request</h1>
           <p class="text-xs text-slate-500 font-semibold">
-            Missing voucher query parameter. Please scan a valid voucher QR code.
+            Missing voucher reference parameter. Please scan a valid voucher QR code.
           </p>
+          <a href="/dashboard" class="inline-block px-4 py-2 bg-emerald-700 text-white font-bold rounded-lg text-xs hover:bg-emerald-800 transition">
+            Go to Dashboard
+          </a>
         </div>
       </body>
       </html>
     `);
   }
 
-  try {
-    const { data: voucher, error } = await supabase
-      .from('vouchers')
-      .select('*')
-      .or(`id.eq.${voucherId},voucher_ref.eq.${voucherId}`)
-      .maybeSingle();
+  // Not found fallback page with client-side localStorage recovery
+  return res.status(404).send(`
+    <!DOCTYPE html>
+    <html lang="en">
+    <head>
+      <meta charset="UTF-8">
+      <meta name="viewport" content="width=device-width, initial-scale=1.0">
+      <title>Voucher Verification | Saudi Pak Travels</title>
+      <script src="https://cdn.tailwindcss.com"></script>
+      <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+    </head>
+    <body class="flex items-center justify-center min-h-screen bg-slate-100 p-4 font-sans">
+      <div id="statusContainer" class="w-full max-w-md bg-white rounded-2xl shadow-xl overflow-hidden border border-slate-100 p-6 text-center space-y-4">
+        <div class="w-16 h-16 bg-rose-100 text-rose-600 rounded-full flex items-center justify-center mx-auto">
+          <i class="fa-solid fa-triangle-exclamation text-3xl"></i>
+        </div>
+        <h1 class="text-lg font-black text-slate-800 uppercase tracking-wide">Verification Failed</h1>
+        <p class="text-xs text-slate-500 font-semibold leading-relaxed">
+          The voucher reference <span class="font-mono font-bold text-slate-700">${voucherId || 'Unknown'}</span> could not be verified in our records.<br>
+          Please check the voucher reference number and scan again.
+        </p>
+        <div class="pt-2 flex flex-col gap-2">
+          <a href="/dashboard" class="w-full py-2.5 bg-emerald-700 text-white font-bold rounded-xl text-xs hover:bg-emerald-800 transition flex items-center justify-center gap-2">
+            <i class="fa-solid fa-table-columns"></i> Go to Dashboard
+          </a>
+          <button onclick="window.history.back()" class="w-full py-2 bg-slate-100 text-slate-700 font-bold rounded-xl text-xs hover:bg-slate-200 transition">
+            Go Back
+          </button>
+        </div>
+        <div class="border-t border-slate-100 pt-4 text-[10px] text-slate-400 font-bold uppercase tracking-wider">
+          <i class="fa-solid fa-circle-info text-slate-400 mr-1"></i> Saudi Pak Travels Verification System
+        </div>
+      </div>
 
-    if (error || !voucher) {
-      return res.status(404).send(`
-        <!DOCTYPE html>
-        <html lang="en">
-        <head>
-          <meta charset="UTF-8">
-          <meta name="viewport" content="width=device-width, initial-scale=1.0">
-          <title>Voucher Not Found | Saudi Pak Travels</title>
-          <script src="https://cdn.tailwindcss.com"></script>
-          <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
-        </head>
-        <body class="flex items-center justify-center min-h-screen bg-slate-100 p-4">
-          <div class="w-full max-w-md bg-white rounded-2xl shadow-xl overflow-hidden border border-slate-100 p-6 text-center space-y-4">
-            <div class="w-16 h-16 bg-rose-100 text-rose-600 rounded-full flex items-center justify-center mx-auto">
-              <i class="fa-solid fa-triangle-exclamation text-3xl"></i>
-            </div>
-            <h1 class="text-lg font-black text-slate-800 uppercase tracking-wide">Verification Failed</h1>
-            <p class="text-xs text-slate-500 font-semibold leading-relaxed">
-              The voucher reference <span class="font-mono font-bold text-slate-700">${voucherId}</span> could not be verified in our records.<br>
-              Please check the voucher reference number and scan again.
-            </p>
-            <div class="border-t border-slate-100 pt-4 text-[10px] text-slate-400 font-bold uppercase tracking-wider">
-              <i class="fa-solid fa-circle-info text-slate-400 mr-1"></i> Saudi Pak Travels Verification System
-            </div>
-          </div>
-        </body>
-        </html>
-      `);
-    }
-
-    const formData = voucher.form_data || {};
-    const voucherRef = voucher.voucher_ref || voucher.id;
-
-    // Load agency settings
-    const savedSettings = readJSONFile(SETTINGS_FILE, {});
-    const agencySettings = savedSettings && savedSettings.agencyName ? savedSettings : {
-      agencyName: 'SAUDI PAK GROUP OF TRAVELS',
-      tagline: 'Hajj & Umrah Pilgrimage',
-      phone1: '03169666666',
-      phone2: '+966 50 9876543',
-      email: 'saudipakavi@gmail.com',
-      website: 'www.saudipak.com.pk',
-      address: 'Suite # 6-7, Hajvari Arcade, Kutchery Road, Multan',
-      licenseNo: 'DTS-4492'
-    };
-
-    const protocol = req.headers['x-forwarded-proto'] || req.protocol || 'http';
-    const host = req.headers.host;
-    const baseUrl = process.env.PUBLIC_APP_URL || `${protocol}://${host}`;
-
-    let qrDataUrl = '';
-    try {
-      const verifyUrl = `${baseUrl}/verify?voucher=${voucherRef}`;
-      qrDataUrl = await QRCode.toDataURL(verifyUrl, {
-        errorCorrectionLevel: 'M',
-        margin: 2,
-        width: 150,
-        color: { dark: '#047857', light: '#ffffff' }
-      });
-    } catch (qrErr) {
-      console.error("QR Code generation in verify route failed:", qrErr);
-    }
-
-    const fullHtml = buildSelfContainedPdfHtml(formData, agencySettings, qrDataUrl, baseUrl, true);
-    res.send(fullHtml);
-  } catch (err) {
-    console.error("Verification Route Error:", err.message);
-    res.status(500).send("Verification lookup failed.");
-  }
+      <script>
+        // Client-side localStorage recovery for recently generated vouchers
+        (function() {
+          try {
+            const voucherId = ${JSON.stringify(voucherId)};
+            if (!voucherId) return;
+            const localStr = localStorage.getItem('tvg_vouchers');
+            if (localStr) {
+              const localList = JSON.parse(localStr);
+              const found = (localList || []).find(v => 
+                (v.id && v.id.toLowerCase() === voucherId.toLowerCase()) ||
+                (v.voucherRef && v.voucherRef.toLowerCase() === voucherId.toLowerCase())
+              );
+              if (found) {
+                document.getElementById('statusContainer').innerHTML = '<div class="p-6 text-center space-y-3"><i class="fa-solid fa-spinner fa-spin text-3xl text-emerald-600"></i><p class="text-sm font-bold text-slate-700">Syncing and verifying voucher...</p></div>';
+                fetch('/api/vouchers', {
+                  method: 'POST',
+                  headers: { 'Content-Type': 'application/json' },
+                  body: JSON.stringify(found)
+                }).finally(() => {
+                  window.location.reload();
+                });
+              }
+            }
+          } catch(e) {}
+        })();
+      </script>
+    </body>
+    </html>
+  `);
 });
 
 // Route fallbacks for SPA client-side routes

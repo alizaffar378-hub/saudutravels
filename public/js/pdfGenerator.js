@@ -101,13 +101,72 @@ function formatCreatorName(email, role) {
   return `${username} (${roleDisplay || baseRole || role})`;
 }
 
+function cleanCompactObj(obj) {
+  if (Array.isArray(obj)) {
+    return obj.map(cleanCompactObj).filter(x => x !== null && x !== undefined && (typeof x !== 'object' || Object.keys(x).length > 0));
+  } else if (typeof obj === 'object' && obj !== null) {
+    const res = {};
+    for (const [k, val] of Object.entries(obj)) {
+      if (val !== '' && val !== null && val !== undefined && val !== false && !(Array.isArray(val) && val.length === 0)) {
+        res[k] = cleanCompactObj(val);
+      }
+    }
+    return res;
+  }
+  return obj;
+}
+
+function encodeVoucherData(data) {
+  if (!data) return '';
+  try {
+    const compact = {
+      id: data.id || data.voucherRef || '',
+      vD: data.voucherDate || '',
+      pN: data.packageName || '',
+      fH: data.familyHead || '',
+      pax: data.totalPax || (Array.isArray(data.passengers) ? data.passengers.length : 1),
+      ad: data.adultsCount || 0,
+      ch: data.childrenCount || 0,
+      inf: data.infantsCount || 0,
+      p: (Array.isArray(data.passengers) ? data.passengers : []).map(p => cleanCompactObj({
+        s: p.sno, n: p.name, pp: p.passportNo, g: p.gender, t: p.type, v: p.visaNo, m: p.mofaNo, gr: p.groupNo, pnr: p.pnr
+      })),
+      h: (Array.isArray(data.hotels) ? data.hotels : []).map(h => cleanCompactObj({
+        c: h.city, hn: h.hotelName, rt: h.roomType, mp: h.mealPlan, ci: h.checkIn, co: h.checkOut, n: h.totalNights
+      })),
+      fl: cleanCompactObj(data.flight ? {
+        da: data.flight.departureAirline, df: data.flight.departureFlightNo, dd: data.flight.departureDate, dr: data.flight.departureRoute, dt: data.flight.departureTime, dat: data.flight.departureArrivalTime,
+        ra: data.flight.returnAirline, rf: data.flight.returnFlightNo, rd: data.flight.returnDate, rr: data.flight.returnRoute, rt: data.flight.returnTime, rat: data.flight.returnArrivalTime
+      } : null),
+      tr: cleanCompactObj(data.transport ? {
+        d: data.transport.date, tp: data.transport.transporter, v: data.transport.vehicleType, r: data.transport.route, rn: data.transport.routeNo
+      } : null),
+      zy: cleanCompactObj(Array.isArray(data.ziyarat) ? data.ziyarat.map(z => ({ c: z.city, z: z.ziyarat, d: z.date })) : null),
+      st: data.status || 'APPROVED',
+      by: data.createdBy || data.agentName || 'admin@saudipak.com',
+      an: data.agentName || data.bookingAgentName || 'Admin'
+    };
+    
+    const cleaned = cleanCompactObj(compact);
+    const jsonStr = JSON.stringify(cleaned);
+    if (typeof window !== 'undefined' && typeof window.btoa === 'function') {
+      return encodeURIComponent(btoa(unescape(encodeURIComponent(jsonStr))));
+    }
+    return '';
+  } catch (e) {
+    console.warn("Client encodeVoucherData error:", e);
+    return '';
+  }
+}
+
 // Main function to render A4 Voucher Template
 async function renderA4VoucherHTML(data, agencySettings) {
   const voucher_ref = data.voucherRef || data.id || '';
   const baseUrl = (typeof window !== 'undefined' && window.location && window.location.origin)
     || (typeof process !== 'undefined' && process.env && process.env.PUBLIC_APP_URL)
-    || 'https://saudipak-vouchers.vercel.app';
-  const verifyUrl = `${baseUrl}/verify?voucher=${voucher_ref}`;
+    || 'https://saudipak.vercel.app';
+  const encodedData = encodeVoucherData(data);
+  const verifyUrl = `${baseUrl}/verify?voucher=${voucher_ref}${encodedData ? '&d=' + encodedData : ''}`;
   const qrDataUrl = await generateQRCodeDataUrl(verifyUrl);
 
   // Agency logo HTML
