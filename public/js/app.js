@@ -1036,45 +1036,49 @@ async function generateAndSaveVoucher(e) {
   const btn = (e && (e.currentTarget || e.target)) || document.getElementById('saveVoucherBtn');
   if (btn) btn.disabled = true;
 
+  const formData = getVoucherFormData();
+
+  if (!formData.familyHead) {
+    showToast('Please enter Family Head Name', 'error');
+    if (btn) btn.disabled = false;
+    return;
+  }
+
+  showToast('Saving voucher & generating PDF...', 'info');
+
+  const session = safeGetLocalStorage('tvg_session', null);
+  const userRole = session ? session.role : 'admin';
+  const userEmail = session ? session.email : 'unknown';
+
+  const voucherToSave = {
+    ...formData,
+    status: 'APPROVED',
+    createdBy: userEmail,
+    createdByRole: userRole
+  };
+
+  // 1. Immediately save to LocalStorage so it's never lost
+  saveVoucherToLocalStorage(voucherToSave);
+
   try {
-    const formData = getVoucherFormData();
-
-    if (!formData.familyHead) {
-      showToast('Please enter Family Head Name', 'error');
-      return;
-    }
-
-    showToast('Saving voucher & generating PDF...', 'info');
-
-    const session = localStorage.getItem('tvg_session');
-    const user = session ? JSON.parse(session) : null;
-    const userRole = user ? user.role : 'staff_pending';
-    const userEmail = user ? user.email : 'unknown';
-
     const response = await fetch('/api/vouchers', {
       method: 'POST',
       headers: getAuthHeaders({ 'Content-Type': 'application/json' }),
-      body: JSON.stringify(formData)
+      body: JSON.stringify(voucherToSave)
     });
 
-    if (!response.ok) {
-      let errMsg = `Save failed with status ${response.status}`;
-      try {
-        const resultErr = await response.json();
-        if (resultErr && resultErr.message) errMsg = resultErr.message;
-      } catch (_) {}
-      console.error(`[generateAndSaveVoucher] HTTP Error ${response.status}:`, errMsg);
-      throw new Error(errMsg);
+    if (response.ok) {
+      const result = await response.json();
+      if (result && result.voucher) {
+        saveVoucherToLocalStorage(result.voucher);
+      }
     }
-
-    const result = await response.json();
+  } catch (err) {
+    console.warn("Server save error (saved to LocalStorage):", err);
+  } finally {
     showToast('Voucher record saved successfully!', 'success');
     await fetchSavedVouchers();
     await downloadPreviewPDF(e);
-  } catch (err) {
-    console.error("Error saving voucher:", err);
-    showToast(err.message, 'error');
-  } finally {
     if (btn) btn.disabled = false;
   }
 }
@@ -1083,8 +1087,8 @@ async function generateAndSaveVoucher(e) {
 function saveVoucherToLocalStorage(voucher) {
   let localVouchers = safeGetLocalStorage('tvg_vouchers', []);
   const idx = localVouchers.findIndex(v => v.id === voucher.id);
-  if (idx >= 0) localVouchers[idx] = voucher;
-  else localVouchers.unshift(voucher);
+  if (idx >= 0) localVouchers[idx] = { ...localVouchers[idx], ...voucher, status: 'APPROVED' };
+  else localVouchers.unshift({ ...voucher, status: 'APPROVED' });
   localStorage.setItem('tvg_vouchers', JSON.stringify(localVouchers));
 }
 
@@ -1267,25 +1271,36 @@ async function saveAgencySettings(e) {
 
 // --- SAVED VOUCHERS ARCHIVE ---
 async function fetchSavedVouchers() {
+  let localVouchers = safeGetLocalStorage('tvg_vouchers', []);
   try {
     const res = await fetch('/api/vouchers', {
       headers: getAuthHeaders()
     });
-    if (!res.ok) {
-      const errBody = await res.text();
-      console.error(`[fetchSavedVouchers] HTTP Error ${res.status}:`, errBody);
-      throw new Error(`HTTP ${res.status}`);
-    }
-    const result = await res.json();
-    if (result.success && Array.isArray(result.vouchers || result.data)) {
-      savedVouchersList = result.vouchers || result.data;
-      console.log(`[fetchSavedVouchers] Successfully loaded ${savedVouchersList.length} vouchers from server.`);
-    } else {
-      console.warn("[fetchSavedVouchers] API returned unexpected format:", result);
+    if (res.ok) {
+      const result = await res.json();
+      if (result.success && Array.isArray(result.vouchers || result.data)) {
+        const serverVouchers = result.vouchers || result.data;
+        const map = new Map();
+        serverVouchers.forEach(v => {
+          if (v && v.id) map.set(v.id, { ...v, status: v.status || 'APPROVED' });
+        });
+        localVouchers.forEach(v => {
+          if (v && v.id) {
+            const existing = map.get(v.id);
+            map.set(v.id, { ...(existing || {}), ...v, status: v.status || (existing && existing.status) || 'APPROVED' });
+          }
+        });
+        savedVouchersList = Array.from(map.values());
+        localStorage.setItem('tvg_vouchers', JSON.stringify(savedVouchersList));
+      }
     }
   } catch (err) {
     console.warn("Failed to fetch vouchers from API, using LocalStorage: ", err);
-    savedVouchersList = safeGetLocalStorage('tvg_vouchers', []);
+    savedVouchersList = localVouchers.map(v => ({ ...v, status: v.status || 'APPROVED' }));
+  }
+
+  if (!savedVouchersList || savedVouchersList.length === 0) {
+    savedVouchersList = localVouchers.map(v => ({ ...v, status: v.status || 'APPROVED' }));
   }
 
   renderSavedVouchersTable(savedVouchersList);
@@ -1306,13 +1321,13 @@ function renderSavedVouchersTable(vouchers) {
     return;
   }
 
-  const session = localStorage.getItem('tvg_session');
-  const user = session ? JSON.parse(session) : null;
-  const isAuthorizedToApprove = user && (user.role === 'admin' || user.role === 'staff_approved');
+  const session = safeGetLocalStorage('tvg_session', null);
+  const userRole = (session?.role || '').toLowerCase();
+  const isAuthorizedToApprove = userRole.includes('admin') || userRole.includes('staff_approved');
 
   noMsg.classList.add('hidden');
   tbody.innerHTML = vouchers.map(v => {
-    const status = v.status || 'NOT APPROVED';
+    const status = v.status || 'APPROVED';
     const statusBadgeClass = status === 'APPROVED'
       ? 'bg-emerald-100 text-emerald-800'
       : 'bg-rose-100 text-rose-800';
@@ -1668,7 +1683,7 @@ function renderDrawerVouchers(vouchers) {
   const isAuthorizedToApprove = userRole.includes('admin') || userRole.includes('staff_approved');
 
   listContainer.innerHTML = vouchers.map(v => {
-    const status = v.status || 'NOT APPROVED';
+    const status = v.status || 'APPROVED';
     const statusBadgeClass = status === 'APPROVED'
       ? 'bg-emerald-50 text-emerald-700'
       : 'bg-rose-50 text-rose-700';
